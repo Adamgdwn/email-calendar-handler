@@ -49,6 +49,18 @@ create table if not exists account_consents (
   check (human_confirmed is true)
 );
 
+create table if not exists account_sync_checkpoints (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references accounts(id) on delete cascade,
+  provider provider_type not null,
+  mail_folder_id text not null,
+  graph_delta_link text,
+  gmail_history_id text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (account_id, provider, mail_folder_id)
+);
+
 create table if not exists threads (
   id uuid primary key default gen_random_uuid(),
   account_id uuid not null references accounts(id) on delete cascade,
@@ -145,6 +157,8 @@ create table if not exists decision_embeddings (
 create index if not exists idx_threads_account_last_activity on threads(account_id, last_activity desc);
 create index if not exists idx_account_consents_account_granted
   on account_consents(account_id, granted_at desc);
+create index if not exists idx_account_sync_checkpoints_account_provider
+  on account_sync_checkpoints(account_id, provider);
 create index if not exists idx_emails_account_timestamp on emails(account_id, message_timestamp desc);
 create index if not exists idx_emails_classification on emails using gin (classification);
 create index if not exists idx_contacts_account_influence on contacts(account_id, influence_score desc);
@@ -154,6 +168,7 @@ create index if not exists idx_feedback_account_created on feedback(account_id, 
 alter table personas enable row level security;
 alter table accounts enable row level security;
 alter table account_consents enable row level security;
+alter table account_sync_checkpoints enable row level security;
 alter table threads enable row level security;
 alter table emails enable row level security;
 alter table contacts enable row level security;
@@ -166,6 +181,8 @@ create policy "service_role_all_personas" on personas for all using (auth.role()
 create policy "service_role_all_accounts" on accounts for all using (auth.role() = 'service_role');
 create policy "service_role_all_account_consents"
   on account_consents for all using (auth.role() = 'service_role');
+create policy "service_role_all_account_sync_checkpoints"
+  on account_sync_checkpoints for all using (auth.role() = 'service_role');
 create policy "service_role_all_threads" on threads for all using (auth.role() = 'service_role');
 create policy "service_role_all_emails" on emails for all using (auth.role() = 'service_role');
 create policy "service_role_all_contacts" on contacts for all using (auth.role() = 'service_role');

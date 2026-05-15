@@ -147,7 +147,7 @@ Done criteria:
 
 ### Chunk 5: Microsoft Graph Delta Sync
 
-Status: planned.
+Status: implemented in PR #9.
 
 GitHub issue: #6
 
@@ -180,8 +180,8 @@ Done criteria:
 After PR #9 is reviewed or merged, say:
 
 ```text
-Carry on with chunk 5.
+Carry on with chunk 6.
 ```
 
-That starts Microsoft Graph delta sync without connecting real mailbox
-credentials.
+That starts the multi-provider/profile abstraction check without connecting real
+mailbox credentials.
