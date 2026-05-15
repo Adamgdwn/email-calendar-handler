@@ -1,0 +1,12 @@
+profile_id: habitat
+display_name: Habitat for Humanity
+tone: warm_accountable_service_oriented
+urgency_definitions:
+  critical: ["grant deadline", "safety", "family placement", "board approval"]
+  high: ["donor", "volunteer schedule", "program deadline"]
+  normal: ["update", "thank you", "coordination"]
+filing_taxonomy: nonprofit.yaml
+response_constraints:
+  - "Protect participant privacy"
+  - "Keep donor commitments precise"
+  - "Use warm but professional language"

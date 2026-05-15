@@ -1,0 +1,67 @@
+project_name: email and calendar handler
+project_codename: InboxMind
+project_type: application
+risk_tier: medium
+repository_model: single-repo
+owner:
+  name: Project Owner
+  role: owner
+technical_lead:
+  name: Technical Lead
+  role: technical-lead
+status: active
+environments:
+  - dev
+  - staging
+  - prod
+data_classification:
+  handles_sensitive_data: true
+  handles_money: false
+  notes: >
+    Processes personal and business email metadata/content. Phase 1 is local,
+    single-account, human-reviewed MVP work only. The system must not send email,
+    create drafts, or modify external labels without an explicit human_approved
+    flag recorded in application state.
+controls:
+  required_docs:
+    - README.md
+    - docs/architecture.md
+    - docs/manual.md
+    - docs/roadmap.md
+    - docs/deployment-guide.md
+    - docs/runbook.md
+    - docs/CHANGELOG.md
+    - docs/risks/risk-register.md
+  machine_enforcement:
+    - required-file-check
+    - lint
+    - tests
+    - typecheck
+    - secret-scan
+exceptions:
+  - id: EX-2026-05-15-001
+    status: accepted
+    severity: low
+    owner: Project Owner
+    opened: 2026-05-15
+    review_by: 2026-06-15
+    control: governance-preflight
+    reason: >
+      scripts/governance-preflight.sh could not run because GOVERNANCE_HOME was
+      not set and no local automation/governance_check.sh fallback exists.
+    acceptance: >
+      Accepted for Milestone 1.1 scaffolding because development is step-by-step,
+      local, and no external email actions are implemented. Governance metadata,
+      required docs, lint, typecheck, tests, and secret scanning remain required.
+    remediation: >
+      Configure GOVERNANCE_HOME or vendor the governance check before real email
+      ingestion credentials are connected.
+agent_controls:
+  applicable: true
+  autonomy_level: A1
+  model_registry:
+    - anthropic_claude_api
+  prompt_registry:
+    - src/agents/CLAUDE.md
+    - src/models/CLAUDE.md
+    - src/memory/CLAUDE.md

@@ -1,0 +1,1 @@
+"""InboxMind application package."""

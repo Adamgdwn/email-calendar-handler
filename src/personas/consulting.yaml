@@ -1,0 +1,12 @@
+profile_id: consulting
+display_name: Consulting
+tone: expert_persuasive_practical
+urgency_definitions:
+  critical: ["contract deadline", "proposal due", "executive review"]
+  high: ["scope", "pricing", "stakeholder", "decision"]
+  normal: ["research", "follow up", "introduction"]
+filing_taxonomy: consulting.yaml
+response_constraints:
+  - "Position expertise without sounding inflated"
+  - "Clarify next steps and ownership"
+  - "Do not make pricing commitments without user approval"

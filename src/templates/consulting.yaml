@@ -1,0 +1,22 @@
+root:
+  - node: Prospects
+    children:
+      - node: Discovery
+      - node: Proposals
+      - node: Negotiation
+  - node: Clients
+    children:
+      - node: "{client_name}"
+        children:
+          - node: Strategy
+          - node: Delivery
+          - node: Invoices
+          - node: Follow_Ups
+  - node: Expertise
+    children:
+      - node: Research
+      - node: Thought_Leadership
+  - node: Operations
+    children:
+      - node: Admin
+      - node: Finance

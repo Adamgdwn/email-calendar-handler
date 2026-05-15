@@ -1,0 +1,22 @@
+root:
+  - node: Council
+    children:
+      - node: Motions
+      - node: Bylaws
+      - node: Agenda_Items
+      - node: Public_Notices
+  - node: Meetings
+    children:
+      - node: "{meeting_date}"
+      - node: Minutes
+      - node: Follow_Ups
+  - node: Departments
+    children:
+      - node: Administration
+      - node: Planning
+      - node: Finance
+      - node: Public_Works
+  - node: Constituents
+    children:
+      - node: Inquiries
+      - node: Casework

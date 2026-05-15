@@ -1,0 +1,12 @@
+profile_id: prime_boilers
+display_name: Prime Boilers
+tone: direct_competent_client_relational
+urgency_definitions:
+  critical: ["shutdown", "emergency", "safety", "deadline"]
+  high: ["quote", "site", "inspection", "approval"]
+  normal: ["update", "follow up", "correspondence"]
+filing_taxonomy: commercial.yaml
+response_constraints:
+  - "Keep replies direct and competence-demonstrating"
+  - "Do not overpromise schedule or scope"
+  - "Confirm operational details before commitments"

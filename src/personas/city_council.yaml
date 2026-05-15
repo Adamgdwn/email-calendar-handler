@@ -1,0 +1,13 @@
+profile_id: city_council
+display_name: City Council
+tone: formal_procedural
+urgency_definitions:
+  critical: ["motion deadline", "bylaw", "council resolution", "public notice"]
+  high: ["agenda item", "meeting", "vote"]
+  normal: ["update", "correspondence", "inquiry"]
+filing_taxonomy: municipal.yaml
+response_constraints:
+  - "All responses assume public record visibility"
+  - "No informal language"
+  - "Reference motion numbers when available"
+  - "Do not commit to positions without explicit user instruction"

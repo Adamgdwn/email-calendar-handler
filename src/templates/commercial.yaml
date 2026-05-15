@@ -1,0 +1,25 @@
+root:
+  - node: Clients
+    children:
+      - node: "{client_name}"
+        children:
+          - node: Quotes
+          - node: Contracts
+          - node: Site_Reports
+          - node: Invoices
+          - node: Correspondence
+  - node: Operations
+    children:
+      - node: Scheduling
+      - node: Parts_Orders
+      - node: Compliance
+      - node: Safety
+  - node: Finance
+    children:
+      - node: Payables
+      - node: Receivables
+      - node: Banking
+  - node: Internal
+    children:
+      - node: HR
+      - node: Admin

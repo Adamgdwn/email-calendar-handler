@@ -1,0 +1,21 @@
+root:
+  - node: Programs
+    children:
+      - node: Applications
+      - node: Delivery
+      - node: Impact_Reports
+  - node: Donors
+    children:
+      - node: Pledges
+      - node: Receipts
+      - node: Stewardship
+  - node: Volunteers
+    children:
+      - node: Scheduling
+      - node: Onboarding
+      - node: Recognition
+  - node: Grants
+    children:
+      - node: Applications
+      - node: Agreements
+      - node: Reporting
