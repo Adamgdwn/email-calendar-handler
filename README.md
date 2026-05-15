@@ -21,6 +21,10 @@ Included now:
 - Supabase schema foundation with RLS enabled
 - Exact-pinned dependencies, pre-commit, CI, tests, and secret scanning
 
+For context-cleared work sessions, use
+[`docs/production-instructions.md`](docs/production-instructions.md) as the
+single production handoff document. Example prompt: "carry on with chunk 2."
+
 Next focus:
 - Microsoft Graph OAuth and consent logging
 - Outlook message mapping into typed `RawEmail` records
@@ -47,8 +51,8 @@ Run this before substantial changes:
 bash scripts/governance-preflight.sh
 ```
 
-Current accepted exception: local preflight requires `GOVERNANCE_HOME`. Configure
-governance before real Outlook credentials or mailbox content are connected.
+The repository includes a local governance fallback check. Preflight must pass
+before real Outlook credentials or mailbox content are connected.
 
 ## Safety Rules
 

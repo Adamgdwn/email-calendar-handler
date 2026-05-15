@@ -9,3 +9,5 @@
   the second provider after the provider-neutral pipeline is proven.
 - Restored local governance preflight and added the Microsoft Graph OAuth
   configuration plus consent logging boundary for Outlook-first ingestion.
+- Added a single production instruction document for context-cleared sessions
+  and numbered chunk handoffs.
