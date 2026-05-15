@@ -131,7 +131,7 @@ Done criteria:
 
 ### Chunk 4: Encrypted Storage And Rate Limiting
 
-Status: planned.
+Status: implemented in PR #9.
 
 GitHub issue: #5
 
@@ -180,8 +180,8 @@ Done criteria:
 After PR #9 is reviewed or merged, say:
 
 ```text
-Carry on with chunk 4.
+Carry on with chunk 5.
 ```
 
-That starts encrypted storage and rate limiting without connecting real mailbox
+That starts Microsoft Graph delta sync without connecting real mailbox
 credentials.

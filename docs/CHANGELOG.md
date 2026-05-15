@@ -15,3 +15,5 @@
   dedupe keys, duplicate detection helpers, and synthetic Outlook fixtures.
 - Added provider-neutral `RawEmail` to `EmailThread` assembly with chronological
   ordering, participant normalization, duration, and last-activity calculation.
+- Added encrypted email storage records, a typed Supabase insert adapter, and a
+  provider retry wrapper for Microsoft Graph calls.
