@@ -40,6 +40,20 @@ Provider-specific checkpoints stay outside agent logic:
 Agents consume `RawEmail`, `EmailThread`, and `AccountContext` only; they do not
 branch on provider unless a typed model explicitly requires it.
 
+The provider adapter contract is:
+
+1. Load account-specific credentials and checkpoints outside specialist agents.
+2. Use provider clients to fetch provider-native payloads.
+3. Normalize payloads into `RawEmail`.
+4. Assemble `EmailThread` objects through provider-neutral ingestion helpers.
+5. Store provider checkpoints in `ProviderSyncCheckpoint`, using
+   `graph_delta_link` for Microsoft Graph and `gmail_history_id` for Gmail.
+
+Gmail becomes the next provider by implementing the same adapter boundary:
+Gmail payloads map to `RawEmail`, Gmail threads map to `EmailThread`, and Gmail
+checkpoint state uses `gmail_history_id`. Classification, filing, relationship,
+response, and learning agents must not gain Gmail- or Outlook-specific branches.
+
 ## Outlook OAuth Boundary
 
 The first provider uses Microsoft Graph delegated permissions. Configuration is

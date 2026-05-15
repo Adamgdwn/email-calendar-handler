@@ -162,7 +162,7 @@ Done criteria:
 
 ### Chunk 6: Multi-Provider/Profile Abstraction Check
 
-Status: planned.
+Status: implemented in PR #9.
 
 GitHub issue: #8
 
@@ -180,8 +180,8 @@ Done criteria:
 After PR #9 is reviewed or merged, say:
 
 ```text
-Carry on with chunk 6.
+Carry on with chunk 7.
 ```
 
-That starts the multi-provider/profile abstraction check without connecting real
-mailbox credentials.
+That starts the Outlook OAuth callback/token storage slice without connecting
+real mailbox content.

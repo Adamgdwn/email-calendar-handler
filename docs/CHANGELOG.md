@@ -19,3 +19,5 @@
   provider retry wrapper for Microsoft Graph calls.
 - Added Microsoft Graph message delta sync pagination, stored delta checkpoint
   modeling, deleted-message tracking, and stale delta state handling.
+- Added provider-neutral sync contracts and tests that protect the downstream
+  agent boundary from Outlook/Gmail branching.
