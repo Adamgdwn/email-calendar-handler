@@ -11,3 +11,5 @@
   configuration plus consent logging boundary for Outlook-first ingestion.
 - Added a single production instruction document for context-cleared sessions
   and numbered chunk handoffs.
+- Added Microsoft Graph message mapping into `RawEmail`, account-scoped body
+  dedupe keys, duplicate detection helpers, and synthetic Outlook fixtures.

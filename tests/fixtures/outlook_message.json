@@ -1,0 +1,41 @@
+{
+  "id": "AAMkADSyntheticMessage001",
+  "conversationId": "AAQkADSyntheticConversation001",
+  "sender": {
+    "emailAddress": {
+      "name": "Alex Client",
+      "address": "Alex.Client@example.com"
+    }
+  },
+  "from": {
+    "emailAddress": {
+      "name": "Alex Client",
+      "address": "Alex.Client@example.com"
+    }
+  },
+  "toRecipients": [
+    {
+      "emailAddress": {
+        "name": "Prime Boilers Ops",
+        "address": "ops@primeboilers.example"
+      }
+    }
+  ],
+  "ccRecipients": [
+    {
+      "emailAddress": {
+        "name": "Service Desk",
+        "address": "service@primeboilers.example"
+      }
+    }
+  ],
+  "bccRecipients": [],
+  "subject": "Boiler service follow-up",
+  "body": {
+    "contentType": "html",
+    "content": "<html><body><p>Hello team,</p><p>Please confirm the service window.</p></body></html>"
+  },
+  "bodyPreview": "Hello team, Please confirm the service window.",
+  "receivedDateTime": "2026-05-15T16:30:00Z",
+  "categories": ["Client", "Service", "Client"]
+}

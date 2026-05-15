@@ -87,7 +87,7 @@ Done criteria:
 
 ### Chunk 2: Outlook RawEmail Mapping And Deduplication
 
-Status: next recommended chunk.
+Status: implemented in PR #9.
 
 GitHub issue: #2
 
@@ -180,8 +180,8 @@ Done criteria:
 After PR #9 is reviewed or merged, say:
 
 ```text
-Carry on with chunk 2.
+Carry on with chunk 3.
 ```
 
-That starts Outlook message mapping and deduplication without connecting real
-mailbox credentials.
+That starts provider-neutral thread assembly without connecting real mailbox
+credentials.
