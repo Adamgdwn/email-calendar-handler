@@ -116,7 +116,7 @@ Done criteria:
 
 ### Chunk 3: Provider-Neutral Thread Assembly
 
-Status: planned.
+Status: implemented in PR #9.
 
 GitHub issue: #3
 
@@ -180,8 +180,8 @@ Done criteria:
 After PR #9 is reviewed or merged, say:
 
 ```text
-Carry on with chunk 3.
+Carry on with chunk 4.
 ```
 
-That starts provider-neutral thread assembly without connecting real mailbox
+That starts encrypted storage and rate limiting without connecting real mailbox
 credentials.

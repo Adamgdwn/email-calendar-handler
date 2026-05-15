@@ -13,3 +13,5 @@
   and numbered chunk handoffs.
 - Added Microsoft Graph message mapping into `RawEmail`, account-scoped body
   dedupe keys, duplicate detection helpers, and synthetic Outlook fixtures.
+- Added provider-neutral `RawEmail` to `EmailThread` assembly with chronological
+  ordering, participant normalization, duration, and last-activity calculation.
