@@ -27,6 +27,19 @@ All inter-agent state uses Pydantic models under `src/models`. Full email bodies
 are stored only through ingestion/storage paths and are not passed to
 classification, filing, or relationship stages.
 
+## Provider Strategy
+
+Milestone 1.2 targets Outlook first through Microsoft Graph. Provider adapters
+must map external messages into the same internal Pydantic contracts so later
+Gmail support does not fork the downstream pipeline.
+
+Provider-specific checkpoints stay outside agent logic:
+- Microsoft Graph stores per-account or per-folder `deltaLink` checkpoints.
+- Gmail later stores `historyId` checkpoints.
+
+Agents consume `RawEmail`, `EmailThread`, and `AccountContext` only; they do not
+branch on provider unless a typed model explicitly requires it.
+
 ## Milestone 1.1 Decisions
 
 - Use Python 3.12 and exact dependency pins.

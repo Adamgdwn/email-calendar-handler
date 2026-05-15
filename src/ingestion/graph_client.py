@@ -4,7 +4,13 @@ from src.models.email_models import AccountContext, RawEmail
 
 
 class MicrosoftGraphClient:
-    """Microsoft Graph client placeholder for Phase 2+."""
+    """Microsoft Graph Outlook client placeholder for Milestone 1.2."""
+
+    required_scopes = (
+        "offline_access",
+        "User.Read",
+        "Mail.Read",
+    )
 
     def fetch_delta(
         self,

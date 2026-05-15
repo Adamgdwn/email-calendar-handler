@@ -28,7 +28,9 @@ create table if not exists accounts (
   timezone text not null default 'America/Edmonton',
   scopes text[] not null default '{}',
   consent_logged_at timestamptz,
+  sync_checkpoint text,
   last_history_id text,
+  last_delta_link text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (provider, primary_email)

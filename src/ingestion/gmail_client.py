@@ -4,7 +4,7 @@ from src.models.email_models import AccountContext, RawEmail
 
 
 class GmailClient:
-    """Scope-limited Gmail client placeholder for Milestone 1.2."""
+    """Scope-limited Gmail client placeholder for the second provider path."""
 
     required_scopes = (
         "https://www.googleapis.com/auth/gmail.readonly",
