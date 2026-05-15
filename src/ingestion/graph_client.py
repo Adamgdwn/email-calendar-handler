@@ -1,16 +1,13 @@
 from __future__ import annotations
 
+from src.ingestion.graph_auth import GRAPH_REQUIRED_SCOPES
 from src.models.email_models import AccountContext, RawEmail
 
 
 class MicrosoftGraphClient:
     """Microsoft Graph Outlook client placeholder for Milestone 1.2."""
 
-    required_scopes = (
-        "offline_access",
-        "User.Read",
-        "Mail.Read",
-    )
+    required_scopes = GRAPH_REQUIRED_SCOPES
 
     def fetch_delta(
         self,

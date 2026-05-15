@@ -36,6 +36,19 @@ create table if not exists accounts (
   unique (provider, primary_email)
 );
 
+create table if not exists account_consents (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references accounts(id) on delete cascade,
+  provider provider_type not null,
+  subject text not null,
+  tenant_id text,
+  scopes text[] not null,
+  human_confirmed boolean not null default true,
+  granted_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  check (human_confirmed is true)
+);
+
 create table if not exists threads (
   id uuid primary key default gen_random_uuid(),
   account_id uuid not null references accounts(id) on delete cascade,
@@ -130,6 +143,8 @@ create table if not exists decision_embeddings (
 );
 
 create index if not exists idx_threads_account_last_activity on threads(account_id, last_activity desc);
+create index if not exists idx_account_consents_account_granted
+  on account_consents(account_id, granted_at desc);
 create index if not exists idx_emails_account_timestamp on emails(account_id, message_timestamp desc);
 create index if not exists idx_emails_classification on emails using gin (classification);
 create index if not exists idx_contacts_account_influence on contacts(account_id, influence_score desc);
@@ -138,6 +153,7 @@ create index if not exists idx_feedback_account_created on feedback(account_id, 
 
 alter table personas enable row level security;
 alter table accounts enable row level security;
+alter table account_consents enable row level security;
 alter table threads enable row level security;
 alter table emails enable row level security;
 alter table contacts enable row level security;
@@ -148,6 +164,8 @@ alter table decision_embeddings enable row level security;
 
 create policy "service_role_all_personas" on personas for all using (auth.role() = 'service_role');
 create policy "service_role_all_accounts" on accounts for all using (auth.role() = 'service_role');
+create policy "service_role_all_account_consents"
+  on account_consents for all using (auth.role() = 'service_role');
 create policy "service_role_all_threads" on threads for all using (auth.role() = 'service_role');
 create policy "service_role_all_emails" on emails for all using (auth.role() = 'service_role');
 create policy "service_role_all_contacts" on contacts for all using (auth.role() = 'service_role');

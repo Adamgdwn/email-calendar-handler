@@ -40,6 +40,17 @@ Provider-specific checkpoints stay outside agent logic:
 Agents consume `RawEmail`, `EmailThread`, and `AccountContext` only; they do not
 branch on provider unless a typed model explicitly requires it.
 
+## Outlook OAuth Boundary
+
+The first provider uses Microsoft Graph delegated permissions. Configuration is
+loaded from environment variables through `MicrosoftGraphOAuthSettings`, and the
+initial allowed scope set is `offline_access`, `User.Read`, and `Mail.Read`.
+Write-capable mail scopes such as send or read/write are rejected at config
+validation time.
+
+Every connected account must log an `OAuthConsentRecord` into `account_consents`
+before mailbox sync. Consent records require `human_confirmed: true`.
+
 ## Milestone 1.1 Decisions
 
 - Use Python 3.12 and exact dependency pins.

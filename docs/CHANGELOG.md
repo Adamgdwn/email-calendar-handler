@@ -7,3 +7,5 @@
   schema, validation tooling, CI, and governance exception tracking.
 - Pivoted Milestone 1.2 planning to Outlook/Microsoft Graph first, with Gmail as
   the second provider after the provider-neutral pipeline is proven.
+- Restored local governance preflight and added the Microsoft Graph OAuth
+  configuration plus consent logging boundary for Outlook-first ingestion.
