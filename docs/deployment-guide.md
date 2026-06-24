@@ -7,4 +7,6 @@ Required before staging:
 - Configure secret storage and Supabase Vault for raw email body encryption.
 - Configure GitHub branch protection on `main`.
 - Require CI checks: lint, format, typecheck, tests, and secret scan.
-- Configure OAuth apps with least-privilege scopes.
+- Configure Microsoft Entra app registration with least-privilege Graph mail
+  scopes before the first Outlook test account is connected.
+- Add Gmail OAuth configuration only after Outlook ingestion passes Milestone 1.2.

@@ -14,3 +14,16 @@ This milestone is developer-facing.
 InboxMind must present filing and response actions for review. The current
 scaffold has no external write capability. Future code must keep
 `human_approved` checks close to every external action.
+
+## Outlook Setup
+
+Create a Microsoft Entra app registration for local development only after
+governance preflight passes. Configure the values in `.env`:
+
+- `MICROSOFT_CLIENT_ID`
+- `MICROSOFT_CLIENT_SECRET`
+- `MICROSOFT_TENANT_ID`
+- `MICROSOFT_REDIRECT_URI`
+
+Use delegated read-only mail consent. Do not add `Mail.Send` or
+`Mail.ReadWrite`.

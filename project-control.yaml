@@ -40,10 +40,11 @@ controls:
     - secret-scan
 exceptions:
   - id: EX-2026-05-15-001
-    status: accepted
+    status: closed
     severity: low
     owner: Project Owner
     opened: 2026-05-15
+    closed: 2026-05-15
     review_by: 2026-06-15
     control: governance-preflight
     reason: >
@@ -56,6 +57,9 @@ exceptions:
     remediation: >
       Configure GOVERNANCE_HOME or vendor the governance check before real email
       ingestion credentials are connected.
+    resolution: >
+      Local automation/governance_check.sh was added so
+      scripts/governance-preflight.sh can pass without GOVERNANCE_HOME.
 agent_controls:
   applicable: true
   autonomy_level: A1
