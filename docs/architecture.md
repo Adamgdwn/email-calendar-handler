@@ -1,6 +1,27 @@
 # Architecture
 
+Last Updated: 2026-07-04
+
 InboxMind uses a supervisor pattern with typed specialist agents.
+
+## Surface
+
+The v1 surface is a CLI plus a rendered artifact, in service of the Morning
+Brief north star (see `docs/roadmap.md`):
+
+- `inboxmind connect`: MSAL device-code OAuth, human-confirmed consent
+  logging, encrypted token cache.
+- `inboxmind sync`: incremental mail (and, from chunk 10, calendar) sync into
+  encrypted storage.
+- `inboxmind brief`: terminal plus `brief-YYYY-MM-DD.md` artifact — agenda,
+  triaged mail by urgency and role, filing proposals, pending drafts.
+- `inboxmind review`: interactive accept/modify/reject that records
+  `FeedbackRecord` rows and drives LearningAgent rule promotion.
+- `inboxmind draft <thread-id>`: persona-toned draft to terminal/clipboard
+  only.
+
+A web UI remains a Phase 4 concern; nothing in the pipeline may assume a
+specific surface.
 
 ## Layers
 
@@ -65,11 +86,37 @@ validation time.
 Every connected account must log an `OAuthConsentRecord` into `account_consents`
 before mailbox sync. Consent records require `human_confirmed: true`.
 
+## Calendar Read Boundary
+
+Calendar is in scope for v1, read-only, entering at chunk 10:
+
+- Allowed scope: `Calendars.Read` only. `Calendars.ReadWrite` and every other
+  write-capable scope stay rejected at config validation time.
+- Provider payloads from Graph `calendarView` map into a provider-neutral
+  `CalendarEvent` model (timezone-aware start/end, organizer, attendees,
+  location, online-meeting URL) so Gmail/Google Calendar can implement the
+  same adapter later.
+- Event body text obeys the same excerpt discipline as email: downstream
+  agents never receive more than the 500-character excerpt.
+- Calendar context feeds triage (meeting-aware urgency boost with a recorded
+  reason) and the brief agenda. No scheduling writes exist in Phase 1.
+
+## Write-Scope Gate
+
+The scope guard in `src/ingestion/graph_auth.py` forbids write-capable Graph
+scopes. Filing moves and mailbox draft creation eventually require
+`Mail.ReadWrite`, so the roadmap defines an explicit gate (metrics plus
+governance review) rather than letting write access drift in. Until that gate
+opens, filing is proposal-only and drafts render locally. See
+`docs/roadmap.md` for the trigger conditions.
+
 ## Milestone 1.1 Decisions
 
 - Use Python 3.12 and exact dependency pins.
 - Use `uv` for affordable, fast local setup.
-- Include LangGraph as a dependency, but keep orchestration as typed stubs until
-  the pipeline behavior justifies graph wiring.
+- Keep orchestration as typed stubs until the pipeline behavior justifies graph
+  wiring. 2026-07-04: the unused LangGraph and Google API client pins were
+  removed to cut dependency noise and supply-chain surface; re-add each with
+  justification in the milestone that first imports it.
 - Use direct Anthropic SDK integration behind project interfaces in later
   milestones to avoid unnecessary framework cost.
