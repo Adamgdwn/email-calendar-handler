@@ -1,5 +1,6 @@
 """Pydantic contracts for InboxMind."""
 
+from src.models.auth_models import OAuthConsentRecord
 from src.models.email_models import (
     AccountContext,
     Classification,
@@ -22,6 +23,7 @@ __all__ = [
     "FilingDecision",
     "FilingRule",
     "FilingTaxonomyNode",
+    "OAuthConsentRecord",
     "PersonaProfile",
     "RawEmail",
     "SenderTaxonomy",

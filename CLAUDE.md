@@ -2,8 +2,8 @@
 
 ## WHAT
 InboxMind is a Python 3.12 email intelligence pipeline for a phased MVP:
-ingest one Gmail account, classify email metadata, propose filing, learn from
-human feedback, and draft replies only for review.
+ingest one Outlook/Microsoft Graph account first, classify email metadata,
+propose filing, learn from human feedback, and draft replies only for review.
 
 ## WHY
 The project handles sensitive communications. Production behavior must be typed,
@@ -13,6 +13,8 @@ reasoning whenever rules are enough.
 ## HOW
 - Run `bash scripts/governance-preflight.sh` and review `project-control.yaml`
   before substantial changes.
+- For resumed work after a context clear, start with
+  `docs/production-instructions.md`.
 - Use `uv sync --all-groups` for setup.
 - Validate with `uv run ruff check`, `uv run ruff format --check`,
   `uv run mypy`, `uv run pytest`, and `uv run python scripts/secret_scan.py`.

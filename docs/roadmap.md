@@ -3,8 +3,8 @@
 ## Phase 1: Foundation and Single-Account MVP
 
 1. Repository and project scaffolding.
-2. Gmail ingestion with OAuth, deduplication, thread assembly, delta sync, and
-   encrypted content storage.
+2. Outlook/Microsoft Graph ingestion with OAuth, deduplication, thread assembly,
+   per-folder delta sync, and encrypted content storage.
 3. Classification agent with metadata-only context and typed JSON output.
 4. Relationship graph stored in Supabase relational tables.
 5. Filing structure engine with human-confirmed rule branches.
@@ -13,8 +13,9 @@
 
 ## Phase 2: Second Account
 
-Add City Council profile, account isolation, municipal taxonomy, and no persona
-bleed across accounts.
+Add a second profile and a second provider path. Gmail becomes the next provider
+after Outlook is proven. Account isolation, municipal taxonomy, and no persona
+bleed across accounts are required before broader use.
 
 ## Phase 3: Relationship Enrichment
 

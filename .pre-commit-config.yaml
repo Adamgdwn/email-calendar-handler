@@ -23,6 +23,6 @@ repos:
         pass_filenames: false
       - id: secret-scan
         name: secret scan
-        entry: python scripts/secret_scan.py
+        entry: uv run python scripts/secret_scan.py
         language: system
         pass_filenames: false
