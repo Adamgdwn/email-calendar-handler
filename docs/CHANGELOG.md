@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.1 - 2026-07-04
+
+- Merged PR #9 (Milestone 1.2 Outlook ingestion foundation, chunks 0-6) and
+  moved to small per-chunk PRs from `main`.
+- Refactored the plan around the Morning Brief north star: chunks 7-13 now
+  each end in a usable CLI slice (`connect`, `sync`, `brief`, `review`,
+  `draft`) with a defined v1 ship gate.
+- Scoped calendar into v1 as read-only (`Calendars.Read`, chunk 10) with a
+  provider-neutral `CalendarEvent` boundary and meeting-aware triage.
+- Made the write-scope gate explicit: `Mail.ReadWrite` requires a >=70%
+  filing-acceptance metric plus governance review; autonomy stays A1.
+- Removed unused `langgraph` and `google-api-python-client` pins (never
+  imported); each returns with justification when first needed.
+- Added `src/ingestion/CLAUDE.md` module guidance and new risk register
+  entries (FOIP records, account-type friction, LLM cost, premature write
+  scopes).
+
 ## 0.1.0 - 2026-05-15
 
 - Repurposed the repository into the InboxMind Milestone 1.1 Python scaffold.

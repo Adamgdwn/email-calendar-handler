@@ -18,10 +18,13 @@ data_classification:
   handles_sensitive_data: true
   handles_money: false
   notes: >
-    Processes personal and business email metadata/content. Phase 1 is local,
+    Processes personal and business email metadata/content plus read-only
+    calendar data (Calendars.Read) from chunk 10. Phase 1 is local,
     single-account, human-reviewed MVP work only. The system must not send email,
     create drafts, or modify external labels without an explicit human_approved
-    flag recorded in application state.
+    flag recorded in application state. Write-capable provider scopes require
+    the roadmap write-scope gate (metrics plus governance review). Council
+    correspondence may be FOIP-visible public record; see the risk register.
 controls:
   required_docs:
     - README.md
