@@ -1,6 +1,6 @@
 # Production Instructions
 
-Last Updated: 2026-07-04
+Last Updated: 2026-07-05
 
 Use this document as the single restart point after clearing the context window.
 When the user says "carry on with chunk N", load this file first, then execute
@@ -57,13 +57,16 @@ uv run pytest
 uv run python scripts/secret_scan.py
 ```
 
-## Branch And PR Rules
+## Branch And Commit Rules
 
-- PR #9 merged on 2026-07-04; all new work branches from updated `main`.
-- One small PR per chunk. Branch naming: `codex/chunk-N-short-description`.
-- Commit format: `[module] feat/fix/docs: description`.
-- Push every completed chunk and update the GitHub issue with validation notes.
-- Do not merge protected `main` directly; use PR review.
+- 2026-07-05: Adam moved to trunk-based development. Work directly on `main`;
+  commit and push to `main` per chunk. No feature branches, no PRs, no merge
+  step. (`main` is not branch-protected.) Chunks 0-10 shipped via per-chunk PRs
+  (#9, #17-#21) and that history stays, but new chunks land straight on `main`.
+- One focused commit (or a short series) per chunk. Commit format:
+  `[module] feat/fix/docs: description`.
+- Run the full validation gauntlet before every push; push every completed
+  chunk.
 
 ## Chunk Map
 
@@ -210,6 +213,11 @@ Done criteria:
 
 ### Chunk 11: Review And Learning — `inboxmind review`
 
+Status: delivered 2026-07-05 (committed straight to `main`; first chunk after
+the move off per-chunk PRs). Real-run verification remains a manual step for
+Adam: once a Supabase project exists and mail is synced, run `inboxmind review`
+and watch the acceptance rate in the brief footer.
+
 Goal: close the feedback loop; the system starts earning rule promotions.
 
 Read:
@@ -283,11 +291,12 @@ risk register entries, and a scope-guard change that keeps per-action
 Say:
 
 ```text
-Carry on with chunk 11.
+Carry on with chunk 12.
 ```
 
-That closes the feedback loop: `inboxmind review` records
-accept/modify/reject decisions as feedback records, LearningAgent earns rule
-promotions after three consecutive accepts (and stays the only
-`filing_rules` writer), and the proposal acceptance rate that drives the
-write-scope gate appears in the brief footer.
+That adds `inboxmind draft`: persona-toned reply drafts for review only.
+ResponseAgent may take full thread context (drafting is allowed), tone and
+constraints come from the persona YAML, and output goes to terminal/clipboard
+and the brief only — nothing is written to the mailbox and nothing is sent, so
+`human_approved` stays false. Token budgets from agent class attributes are
+enforced via `src/utils/token_counter.py`, with a per-draft cost line.

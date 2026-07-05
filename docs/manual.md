@@ -107,11 +107,31 @@ bodies never reach agents. Classification, urgency, and sender taxonomy
 persist to the `emails` table once per message; re-runs reclassify nothing.
 The brief prints to the terminal and lands at
 `$INBOXMIND_HOME/briefs/brief-YYYY-MM-DD.md`, with threads grouped by urgency
-band and every filing proposal review-only (stable ids) until
-`inboxmind review` arrives in chunk 11.
+band, every filing proposal carrying a stable id for `inboxmind review`, and
+(from chunk 11) a filing-feedback footer showing the proposal acceptance rate
+and whether the write-scope gate is open.
 
 From chunk 10 the brief opens with today's agenda (times in the account's
 timezone, all-day events flagged, join links included) before email triage,
 and mail from anyone on today's attendee list is boosted one urgency band
 for display (capped at critical) with the reason shown on the thread line —
 stored classifications are never rewritten.
+
+## Review (Chunk 11)
+
+```bash
+uv run inboxmind review --profile consulting
+```
+
+Review walks the same filing proposals the brief showed (same lookback window;
+`--hours` widens it), one at a time: `a`ccept, `m`odify (then type a new
+slash-separated path), `r`eject, or `s`kip. Each decision is saved as one
+`feedback` row — no mailbox state is ever touched. After the pass the
+LearningAgent folds every recorded decision for the account into filing-rule
+status: three consecutive accepts of the same path confirm a rule, a reject
+retires it, and a modify (or any broken streak) leaves it provisional.
+Confirmed rules still carry `human_approved = false`, so FilingAgent will not
+treat them as authoritative until a human approves them, and LearningAgent
+stays the only writer of `filing_rules`. The proposal acceptance rate shown in
+the brief footer is the metric that governs the `Mail.ReadWrite` write-scope
+gate (opens at 70%).

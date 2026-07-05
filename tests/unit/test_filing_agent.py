@@ -41,3 +41,26 @@ def test_filing_can_apply_confirmed_rule_but_does_not_approve_action() -> None:
     assert decision.proposed_path == ["Clients", "Example", "Correspondence"]
     assert decision.requires_review is False
     assert decision.human_approved is False
+
+
+def test_confirmed_rule_without_human_approval_still_requires_review() -> None:
+    classification = Classification(
+        message_id="msg-1",
+        sender_taxonomy=SenderTaxonomy.EXTERNAL_UNKNOWN,
+        urgency=UrgencyBand.NORMAL,
+        org_type="commercial",
+        confidence_score=0.75,
+    )
+    confirmed_but_unapproved = FilingRule(
+        rule_id="rule-1",
+        account_id="acct-1",
+        path=["Clients", "Example"],
+        status=FilingRuleStatus.CONFIRMED,
+        confidence_score=0.9,
+        human_approved=False,
+    )
+
+    decision = FilingAgent().run(classification, rules=[confirmed_but_unapproved])
+
+    assert decision.requires_review is True
+    assert decision.proposed_path == ["Review"]

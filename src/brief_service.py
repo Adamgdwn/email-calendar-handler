@@ -7,6 +7,7 @@ never reach agents, matching the `ClassificationInput` excerpt contract.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from hashlib import sha256
 from typing import Any
@@ -19,6 +20,7 @@ from src.agents.supervisor import EmailSupervisor
 from src.memory.account_store import ACCOUNTS_TABLE, link_account_persona, persona_profile_id
 from src.memory.calendar_store import load_events
 from src.memory.email_store import EMAILS_TABLE
+from src.memory.feedback_store import acceptance_stats
 from src.memory.rule_store import SupabaseRuleStore
 from src.memory.supabase_client import SupabaseStoreError, TableGateway
 from src.models.brief_models import URGENCY_ORDER, BriefThreadSummary, FilingProposal, MorningBrief
@@ -53,7 +55,29 @@ class PersonaSelectionError(RuntimeError):
     """Raised when no YAML persona matches the account and none was chosen."""
 
 
-def run_brief(
+@dataclass(frozen=True)
+class ProposalContext:
+    """Everything both the brief and the review loop derive from synced mail.
+
+    Sharing this keeps filing proposals (and their stable ids) single-sourced,
+    so a proposal reviewed by `inboxmind review` is the same one the brief
+    showed.
+    """
+
+    account: dict[str, Any]
+    account_id: str
+    persona: PersonaProfile
+    account_zone: ZoneInfo
+    moment: datetime
+    rows: list[dict[str, Any]]
+    classified: dict[str, Classification]
+    classified_now: int
+    previously_classified: int
+    rules: list[FilingRule]
+    proposals: list[FilingProposal]
+
+
+def build_proposal_context(
     *,
     gateway: TableGateway,
     encryptor: FieldEncryptor,
@@ -61,7 +85,8 @@ def run_brief(
     profile_override: str | None = None,
     lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
     now: datetime | None = None,
-) -> MorningBrief:
+) -> ProposalContext:
+    """Load the account, classify (persisting once), and build filing proposals."""
     moment = (now or datetime.now(tz=UTC)).astimezone(UTC)
     account = _load_single_account(gateway)
     account_id = str(account["id"])
@@ -92,22 +117,57 @@ def run_brief(
         classified_now += 1
     rules = SupabaseRuleStore(gateway).list_rules(account_id)
     proposals = _build_proposals(supervisor, account_id, rows, classified, rules)
-    events, attendee_emails = _agenda(
-        gateway, account_id, moment, account_zone, str(account.get("primary_email"))
-    )
-    threads = _build_threads(rows, classified, persona.profile_id, account_zone, attendee_emails)
-    return MorningBrief(
-        brief_date=moment.astimezone(account_zone).date(),
-        account_email=str(account.get("primary_email")),
-        profile_id=persona.profile_id,
-        persona_display_name=persona.display_name,
-        lookback_hours=lookback_hours,
-        generated_at=moment.astimezone(account_zone),
-        events=events,
-        threads=threads,
-        proposals=proposals,
+    return ProposalContext(
+        account=account,
+        account_id=account_id,
+        persona=persona,
+        account_zone=account_zone,
+        moment=moment,
+        rows=rows,
+        classified=classified,
         classified_now=classified_now,
         previously_classified=previously_classified,
+        rules=rules,
+        proposals=proposals,
+    )
+
+
+def run_brief(
+    *,
+    gateway: TableGateway,
+    encryptor: FieldEncryptor,
+    personas: dict[str, PersonaProfile],
+    profile_override: str | None = None,
+    lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
+    now: datetime | None = None,
+) -> MorningBrief:
+    ctx = build_proposal_context(
+        gateway=gateway,
+        encryptor=encryptor,
+        personas=personas,
+        profile_override=profile_override,
+        lookback_hours=lookback_hours,
+        now=now,
+    )
+    events, attendee_emails = _agenda(
+        gateway, ctx.account_id, ctx.moment, ctx.account_zone, str(ctx.account.get("primary_email"))
+    )
+    threads = _build_threads(
+        ctx.rows, ctx.classified, ctx.persona.profile_id, ctx.account_zone, attendee_emails
+    )
+    return MorningBrief(
+        brief_date=ctx.moment.astimezone(ctx.account_zone).date(),
+        account_email=str(ctx.account.get("primary_email")),
+        profile_id=ctx.persona.profile_id,
+        persona_display_name=ctx.persona.display_name,
+        lookback_hours=lookback_hours,
+        generated_at=ctx.moment.astimezone(ctx.account_zone),
+        events=events,
+        threads=threads,
+        proposals=ctx.proposals,
+        acceptance=acceptance_stats(gateway, ctx.account_id),
+        classified_now=ctx.classified_now,
+        previously_classified=ctx.previously_classified,
     )
 
 

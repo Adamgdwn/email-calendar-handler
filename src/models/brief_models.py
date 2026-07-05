@@ -46,6 +46,17 @@ class FilingProposal(BaseModel):
     rationale: str
 
 
+class FilingAcceptanceStats(BaseModel):
+    """Proposal-review outcomes for one account; drives the write-scope gate."""
+
+    total: int = Field(default=0, ge=0)
+    accepted: int = Field(default=0, ge=0)
+
+    @property
+    def rate(self) -> float:
+        return self.accepted / self.total if self.total else 0.0
+
+
 class MorningBrief(BaseModel):
     brief_date: date
     account_email: str
@@ -56,6 +67,7 @@ class MorningBrief(BaseModel):
     events: list[CalendarEvent] = Field(default_factory=list)
     threads: list[BriefThreadSummary] = Field(default_factory=list)
     proposals: list[FilingProposal] = Field(default_factory=list)
+    acceptance: FilingAcceptanceStats = Field(default_factory=FilingAcceptanceStats)
     classified_now: int = Field(ge=0)
     previously_classified: int = Field(ge=0)
 

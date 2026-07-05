@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.0 - 2026-07-05
+
+- Chunk 11 (Review and Learning): `inboxmind review` walks the brief's filing
+  proposals one at a time (accept / modify / reject / skip) and records every
+  decision as a `feedback` row. No mailbox state is touched.
+- LearningAgent gained real, deterministic promotion logic keyed on the filing
+  path: three consecutive accepts confirm a rule, a reject retires it, and a
+  modify or any broken streak leaves or returns it to provisional. It never
+  sets `human_approved`, so a confirmed rule still needs explicit human
+  approval before FilingAgent trusts it.
+- `SupabaseRuleStore.save_rules` is now the single sanctioned `filing_rules`
+  writer (rows stamped `created_by = 'learning_agent'`), invoked only by the
+  review flow after `LearningAgent.run`; promotions update existing rows in
+  place so approval state survives.
+- New `feedback_store` persists and reads `feedback`, and computes the proposal
+  acceptance rate that the Morning Brief now shows in a filing-feedback footer
+  alongside the write-scope gate (opens at 70%).
+- Brief and review share one `build_proposal_context`, so a reviewed proposal
+  is exactly the one the brief displayed (same stable ids).
+- Development moved to trunk-based: chunks now land straight on `main` (no
+  per-chunk PR). Chunk 10 (PR #21) was the last PR-merged chunk.
+- 28 new tests (183 total). Zero new dependencies.
+
 ## 0.5.0 - 2026-07-04
 
 - Chunk 10 (Calendar Read): `inboxmind sync` now also fetches a read-only

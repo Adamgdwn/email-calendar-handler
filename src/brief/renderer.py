@@ -5,11 +5,18 @@ Pure formatting only: no I/O, no persistence, no classification decisions.
 
 from __future__ import annotations
 
-from src.models.brief_models import URGENCY_ORDER, BriefThreadSummary, FilingProposal, MorningBrief
+from src.models.brief_models import (
+    URGENCY_ORDER,
+    BriefThreadSummary,
+    FilingAcceptanceStats,
+    FilingProposal,
+    MorningBrief,
+)
 from src.models.calendar_models import CalendarEvent
 from src.models.email_models import UrgencyBand
 
 _ATTENDEE_DISPLAY_CAP = 4
+WRITE_SCOPE_GATE_RATE = 0.70
 
 _BAND_TITLES: dict[UrgencyBand, str] = {
     UrgencyBand.CRITICAL: "Critical",
@@ -45,12 +52,23 @@ def render_brief(brief: MorningBrief) -> str:
         lines.extend(["", "No new mail in this window."])
     lines.extend(["", "## Filing proposals", ""])
     if brief.proposals:
-        lines.append("Every proposal awaits review; `inboxmind review` arrives in chunk 11.")
+        lines.append("Review these with `inboxmind review` (accept / modify / reject).")
         lines.extend(_proposal_line(proposal) for proposal in brief.proposals)
     else:
         lines.append("No filing proposals in this window.")
+    lines.extend(["", "## Filing feedback", "", _acceptance_line(brief.acceptance)])
     lines.append("")
     return "\n".join(lines)
+
+
+def _acceptance_line(stats: FilingAcceptanceStats) -> str:
+    if stats.total == 0:
+        return "No filing feedback yet; run `inboxmind review` to start the learning loop."
+    gate = "open" if stats.rate >= WRITE_SCOPE_GATE_RATE else "closed"
+    return (
+        f"Filing acceptance: {stats.rate:.0%} ({stats.accepted}/{stats.total} reviewed). "
+        f"Write-scope gate ({WRITE_SCOPE_GATE_RATE:.0%}) is {gate}."
+    )
 
 
 def _triage_line(brief: MorningBrief) -> str:

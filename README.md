@@ -34,7 +34,7 @@ inboxmind review    # accept/modify/reject proposals; feeds the learning loop
 inboxmind draft     # persona-toned reply drafts, terminal/clipboard only
 ```
 
-Runnable today (2026-07-04): `inboxmind connect` (chunk 7) — device-code
+Runnable today (2026-07-05): `inboxmind connect` (chunk 7) — device-code
 sign-in, explicit y/N consent, Fernet-encrypted token cache —
 `inboxmind sync` (chunk 8) — full-then-incremental Graph delta sync with
 dedupe into ciphertext-only Supabase storage — and `inboxmind brief`
@@ -42,16 +42,20 @@ dedupe into ciphertext-only Supabase storage — and `inboxmind brief`
 first Morning Brief (`brief-YYYY-MM-DD.md`) — and, from chunk 10, `sync`
 also pulls a read-only calendar window (`Calendars.Read`) so the brief
 opens with today's agenda and boosts mail from today's attendees one
-urgency band (display-only, reason recorded). See `docs/manual.md` for
-app-registration, Supabase, and persona setup.
+urgency band (display-only, reason recorded). From chunk 11,
+`inboxmind review` walks the brief's proposals (accept/modify/reject),
+records feedback, and the LearningAgent confirms filing rules after three
+consecutive accepts — the brief footer shows the acceptance rate that
+governs the write-scope gate. See `docs/manual.md` for app-registration,
+Supabase, and persona setup.
 
 For context-cleared work sessions, use
 [`docs/production-instructions.md`](docs/production-instructions.md) as the
-single production handoff document. Example prompt: "carry on with chunk 11."
+single production handoff document. Example prompt: "carry on with chunk 12."
 
 Next focus:
-- chunk 11: `inboxmind review` — accept/modify/reject proposals feeding the learning loop
-- chunk 12: local-only persona drafts
+- chunk 12: `inboxmind draft` — persona-toned reply drafts, local output only
+- chunk 13 (optional): LLM classification assist below a confidence threshold
 
 ## Commands
 

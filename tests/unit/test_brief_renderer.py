@@ -1,7 +1,12 @@
 from datetime import UTC, date, datetime
 
 from src.brief.renderer import render_brief
-from src.models.brief_models import BriefThreadSummary, FilingProposal, MorningBrief
+from src.models.brief_models import (
+    BriefThreadSummary,
+    FilingAcceptanceStats,
+    FilingProposal,
+    MorningBrief,
+)
 from src.models.calendar_models import CalendarEvent, EventAttendee
 from src.models.email_models import UrgencyBand
 
@@ -10,6 +15,7 @@ def make_brief(
     threads: list[BriefThreadSummary] | None = None,
     proposals: list[FilingProposal] | None = None,
     events: list[CalendarEvent] | None = None,
+    acceptance: FilingAcceptanceStats | None = None,
 ) -> MorningBrief:
     return MorningBrief(
         brief_date=date(2026, 7, 4),
@@ -21,6 +27,7 @@ def make_brief(
         events=events or [],
         threads=threads or [],
         proposals=proposals or [],
+        acceptance=acceptance or FilingAcceptanceStats(),
         classified_now=len(threads or []),
         previously_classified=0,
     )
@@ -152,3 +159,24 @@ def test_boost_reason_appends_to_thread_line() -> None:
     markdown = render_brief(make_brief(threads=[boosted]))
 
     assert "boosted from low: meeting today with news@example.com" in markdown
+
+
+def test_footer_shows_no_feedback_when_empty() -> None:
+    markdown = render_brief(make_brief())
+
+    assert "## Filing feedback" in markdown
+    assert "No filing feedback yet" in markdown
+
+
+def test_footer_shows_acceptance_rate_and_open_gate() -> None:
+    markdown = render_brief(make_brief(acceptance=FilingAcceptanceStats(total=10, accepted=8)))
+
+    assert "Filing acceptance: 80% (8/10 reviewed)." in markdown
+    assert "Write-scope gate (70%) is open." in markdown
+
+
+def test_footer_reports_closed_gate_below_threshold() -> None:
+    markdown = render_brief(make_brief(acceptance=FilingAcceptanceStats(total=10, accepted=6)))
+
+    assert "Filing acceptance: 60% (6/10 reviewed)." in markdown
+    assert "Write-scope gate (70%) is closed." in markdown
