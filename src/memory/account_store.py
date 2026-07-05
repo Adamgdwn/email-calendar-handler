@@ -14,6 +14,7 @@ from typing import Any
 from src.memory.supabase_client import SupabaseStoreError, TableGateway
 from src.models.auth_models import OAuthConsentRecord
 from src.models.email_models import Provider
+from src.models.persona_models import PersonaProfile
 
 PERSONAS_TABLE = "personas"
 ACCOUNTS_TABLE = "accounts"
@@ -93,6 +94,44 @@ def upload_consents(
         )
     gateway.insert_rows(CONSENTS_TABLE, payloads)
     return len(payloads)
+
+
+def link_account_persona(gateway: TableGateway, *, account_id: str, persona: PersonaProfile) -> str:
+    """Upsert the YAML persona row and point the account at it; returns the persona row id."""
+    now = datetime.now(tz=UTC).isoformat()
+    rows = gateway.upsert_rows(
+        PERSONAS_TABLE,
+        [
+            {
+                "profile_id": persona.profile_id,
+                "display_name": persona.display_name,
+                "tone": persona.tone,
+                "filing_taxonomy": persona.filing_taxonomy,
+                "response_constraints": persona.response_constraints,
+                "updated_at": now,
+            }
+        ],
+        on_conflict="profile_id",
+    )
+    persona_row_id = _single_id(rows)
+    if persona_row_id is None:
+        msg = f"Supabase did not return an id for the upserted {PERSONAS_TABLE} row"
+        raise SupabaseStoreError(msg)
+    gateway.update_rows(
+        ACCOUNTS_TABLE,
+        {"persona_id": persona_row_id, "updated_at": now},
+        eq={"id": account_id},
+    )
+    return persona_row_id
+
+
+def persona_profile_id(gateway: TableGateway, *, persona_row_id: str) -> str | None:
+    """Return the profile_id of a persona row, or None when the row is missing."""
+    rows = gateway.select_rows(PERSONAS_TABLE, "profile_id", eq={"id": persona_row_id})
+    if not rows:
+        return None
+    profile_id = rows[0].get("profile_id")
+    return str(profile_id) if profile_id is not None else None
 
 
 def _ensure_default_persona(gateway: TableGateway) -> str:

@@ -145,6 +145,11 @@ Done criteria:
 
 ### Chunk 9: Morning Brief v1 — `inboxmind brief`
 
+Status: delivered 2026-07-04 (PR #20). A real morning run against the synced
+mailbox remains a manual step for Adam: `inboxmind brief --profile <id>` once
+(the persona choice persists), then `inboxmind brief` daily; steps are in
+`docs/manual.md`.
+
 Goal: the first daily-value artifact from real synced mail, deterministic
 only.
 
@@ -271,9 +276,10 @@ risk register entries, and a scope-guard change that keeps per-action
 Say:
 
 ```text
-Carry on with chunk 9.
+Carry on with chunk 10.
 ```
 
-That delivers the Morning Brief v1: persona urgency keywords loaded from
-YAML, deterministic classification over the mail `inboxmind sync` now stores,
-and a rendered `brief-YYYY-MM-DD.md` — the first daily-value artifact.
+That delivers the calendar half of the product, read-only: `Calendars.Read`
+joins the scope set, `inboxmind sync` fetches today's events, the brief opens
+with the agenda, and mail from today's attendees is boosted one urgency band
+with the reason recorded.

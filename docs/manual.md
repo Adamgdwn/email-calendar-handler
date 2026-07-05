@@ -75,5 +75,24 @@ delta link stored in `account_sync_checkpoints`, and stale delta state
 triggers an automatic full resync. Email bodies land as Fernet ciphertext
 only, and duplicate provider message IDs or account-scoped body hashes are
 skipped before insert. The first sync also bootstraps the `personas` ->
-`accounts` row chain with a `default` persona placeholder until chunk 9 loads
-real personas from YAML.
+`accounts` row chain with a `default` persona placeholder until
+`inboxmind brief --profile` links a real YAML persona.
+
+## Brief (Chunk 9)
+
+```bash
+uv run inboxmind brief --profile consulting
+```
+
+The first run needs `--profile` (one of `city_council`, `consulting`,
+`habitat`, `prime_boilers`) to replace the placeholder persona from the first
+sync; the choice is stored on the account, so later runs are just
+`uv run inboxmind brief`. The command classifies mail from the last 24 hours
+(`--hours` widens the window) using the persona's urgency keywords over
+metadata and a 500-character excerpt of the locally decrypted body — full
+bodies never reach agents. Classification, urgency, and sender taxonomy
+persist to the `emails` table once per message; re-runs reclassify nothing.
+The brief prints to the terminal and lands at
+`$INBOXMIND_HOME/briefs/brief-YYYY-MM-DD.md`, with threads grouped by urgency
+band and every filing proposal review-only (stable ids) until
+`inboxmind review` arrives in chunk 11.

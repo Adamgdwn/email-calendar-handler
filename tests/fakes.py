@@ -36,9 +36,10 @@ class FakeTableGateway:
         *,
         eq: dict[str, str],
         in_filter: tuple[str, list[str]] | None = None,
+        gte: tuple[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         del columns  # the fake returns full rows; callers read only what they selected
-        return [dict(row) for row in self.rows(table) if _matches(row, eq, in_filter)]
+        return [dict(row) for row in self.rows(table) if _matches(row, eq, in_filter, gte)]
 
     def insert_rows(self, table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         stored: list[dict[str, Any]] = []
@@ -77,21 +78,37 @@ class FakeTableGateway:
     ) -> list[dict[str, Any]]:
         updated: list[dict[str, Any]] = []
         for row in self.rows(table):
-            if _matches(row, eq, None):
+            if _matches(row, eq, None, None):
                 row.update(values)
                 updated.append(dict(row))
         return updated
 
 
 def _matches(
-    row: dict[str, Any], eq: dict[str, str], in_filter: tuple[str, list[str]] | None
+    row: dict[str, Any],
+    eq: dict[str, str],
+    in_filter: tuple[str, list[str]] | None,
+    gte: tuple[str, str] | None,
 ) -> bool:
     if any(row.get(column) != value for column, value in eq.items()):
         return False
     if in_filter is not None:
         column, values = in_filter
-        return row.get(column) in values
+        if row.get(column) not in values:
+            return False
+    if gte is not None:
+        column, bound = gte
+        return _meets_lower_bound(row.get(column), bound)
     return True
+
+
+def _meets_lower_bound(value: Any, bound: str) -> bool:
+    # Timestamps arrive in mixed ISO renderings ("Z" vs "+00:00"), so compare
+    # parsed datetimes and fall back to string ordering for non-timestamp columns.
+    try:
+        return datetime.fromisoformat(str(value)) >= datetime.fromisoformat(bound)
+    except ValueError:
+        return str(value) >= bound
 
 
 class ScriptedGraphTransport:

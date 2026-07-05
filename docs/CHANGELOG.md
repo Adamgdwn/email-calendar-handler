@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.4.0 - 2026-07-04
+
+- Chunk 9 (Morning Brief v1): `inboxmind brief` renders the first daily-value
+  artifact from synced mail — terminal output plus
+  `$INBOXMIND_HOME/briefs/brief-YYYY-MM-DD.md`.
+- Persona urgency keywords now come from YAML: `src/personas/loader.py` loads
+  the four repo personas into typed `PersonaProfile` models
+  (`urgency_definitions` is now `dict[UrgencyBand, list[str]]`, keys validated,
+  keywords lowercased), and `ClassificationAgent` takes the persona at
+  construction — the hardcoded keyword lists are gone. No keyword match lands
+  `low` with baseline confidence, so persona `normal` terms are meaningful.
+- Classification consumes metadata plus a 500-character excerpt of the locally
+  decrypted body only, and persists `classification`, `urgency`, and
+  `sender_taxonomy` to the `emails` table exactly once per message (re-runs
+  reclassify nothing).
+- The brief groups threads by urgency band, tags each with the account
+  profile, and lists filing proposals with stable sha256-derived ids for
+  chunk 11's review loop; rules are read through the new `SupabaseRuleStore`
+  (`filing_rules` writes stay LearningAgent-only).
+- `--profile` upgrades the chunk-8 placeholder persona: the YAML persona row
+  is upserted and linked to the account once, then later runs need no flag.
+- `TableGateway.select_rows` gained a `gte` filter for the lookback window.
+- 27 new tests (119 total), including sync-then-brief integration coverage.
+  Zero new dependencies (`pyyaml` was already pinned).
+
 ## 0.3.0 - 2026-07-04
 
 - Chunk 8 (First Light): `inboxmind sync` pulls real mailbox content through
