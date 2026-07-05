@@ -149,6 +149,11 @@ class GraphAuthenticator:
         result = client.acquire_token_silent(scopes, accounts[0])
         if result is None or "access_token" not in result:
             return None
+        # Silent/cached results often omit id_token_claims; inject the MSAL account
+        # username so _to_token_result can always resolve a valid email subject.
+        account_username = accounts[0].get("username", "")
+        if account_username and "id_token_claims" not in result:
+            result = {**result, "_account_username": account_username}
         return result
 
     def _acquire_by_device_flow(
@@ -187,6 +192,7 @@ class GraphAuthenticator:
             claims.get("preferred_username")
             or claims.get("email")
             or claims.get("upn")
+            or result.get("_account_username")
             or "unknown"
         )
         object_id = claims.get("oid")
