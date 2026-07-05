@@ -1,10 +1,11 @@
 """InboxMind command-line interface.
 
-Chunk 11 surface: `inboxmind connect`, `inboxmind sync` (mail plus a
-read-only calendar window), `inboxmind brief` (agenda-first triage), and
-`inboxmind review` (accept/modify/reject filing proposals to teach the
-LearningAgent). A later chunk adds draft. Every command is read-only against
-the mailbox; connect requires an explicit human yes before any sign-in.
+Chunk 12 surface: `inboxmind connect`, `inboxmind sync` (mail plus a
+read-only calendar window), `inboxmind brief` (agenda-first triage),
+`inboxmind review` (accept/modify/reject filing proposals), and
+`inboxmind draft` (persona-toned reply drafts for terminal review only).
+Every command is read-only against the mailbox; connect requires an explicit
+human yes before any sign-in; draft output is never written to the mailbox.
 """
 
 from __future__ import annotations
@@ -17,12 +18,15 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
+from cryptography.fernet import InvalidToken
 from postgrest import APIError
 from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.agents.response_agent import ResponseAgent
 from src.brief.renderer import render_brief
 from src.brief_service import (
+    ACCOUNT_COLUMNS,
     DEFAULT_LOOKBACK_HOURS,
     BriefDataError,
     PersonaSelectionError,
@@ -39,11 +43,15 @@ from src.ingestion.graph_token_cache import (
     build_msal_client,
 )
 from src.ingestion.graph_transport import GraphTransportError, HttpxGraphTransport
+from src.llm.anthropic_client import AnthropicClient
+from src.memory.account_store import ACCOUNTS_TABLE, link_account_persona, persona_profile_id
+from src.memory.email_store import EMAILS_TABLE
 from src.memory.supabase_client import SupabaseSettings, TableGateway, build_table_gateway
 from src.models.auth_models import OAuthConsentRecord
 from src.models.brief_models import FilingProposal
 from src.models.email_models import Provider
 from src.models.feedback_models import FeedbackDecision
+from src.models.persona_models import DraftRequest, DraftResponse, ThreadMessage
 from src.personas.loader import PersonaLoadError, load_personas
 from src.review_service import ReviewInput, ReviewReport, run_review
 from src.sync_service import DEFAULT_CALENDAR_DAYS, SyncReport, run_sync
@@ -51,6 +59,7 @@ from src.utils.encryption import FieldEncryptor
 
 TOKEN_CACHE_FILENAME = "graph_token_cache.enc"  # noqa: S105 - filename, not a secret
 CONSENT_LOG_FILENAME = "consent_log.jsonl"
+DRAFT_THREAD_COLUMNS = "id,thread_id,sender_email,subject,body_ciphertext,message_timestamp"
 
 EXIT_OK = 0
 EXIT_FAILURE = 1
@@ -62,6 +71,12 @@ class AppSettings(BaseSettings):
 
     encryption_key_base64: str = Field(min_length=1)
     inboxmind_home: Path = Field(default_factory=lambda: Path.home() / ".inboxmind")
+
+
+class AnthropicSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="ANTHROPIC_", env_file=".env", extra="ignore")
+
+    api_key: str = Field(min_length=1)
 
 
 class SyncTransport(Protocol):
@@ -93,6 +108,13 @@ def main(
         return _run_brief(gateway_factory, profile=args.profile, hours=args.hours)
     if args.command == "review":
         return _run_review(gateway_factory, profile=args.profile, hours=args.hours)
+    if args.command == "draft":
+        return _run_draft(
+            gateway_factory,
+            thread_id=args.thread_id,
+            profile=args.profile,
+            hours=args.hours,
+        )
     parser.error(f"unknown command: {args.command}")
 
 
@@ -143,6 +165,26 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_LOOKBACK_HOURS,
         help=f"Lookback window in hours (default {DEFAULT_LOOKBACK_HOURS}).",
+    )
+    draft_parser = subparsers.add_parser(
+        "draft",
+        help="Generate a persona-toned reply draft for terminal review only; nothing is sent.",
+    )
+    draft_parser.add_argument(
+        "thread_id",
+        nargs="?",
+        default=None,
+        help="Internal thread UUID from `inboxmind brief`. Omit to pick from a menu.",
+    )
+    draft_parser.add_argument(
+        "--profile",
+        help="Persona profile for tone; uses the account's linked persona if omitted.",
+    )
+    draft_parser.add_argument(
+        "--hours",
+        type=int,
+        default=DEFAULT_LOOKBACK_HOURS,
+        help=f"Lookback window for the thread menu (default {DEFAULT_LOOKBACK_HOURS}).",
     )
     return parser
 
@@ -421,6 +463,148 @@ def _run_review(gateway_factory: GatewayFactory, *, profile: str | None, hours: 
         return EXIT_FAILURE
     _print_review_report(report)
     return EXIT_OK
+
+
+def _run_draft(
+    gateway_factory: GatewayFactory,
+    *,
+    thread_id: str | None,
+    profile: str | None,
+    hours: int,
+) -> int:
+    if hours < 1:
+        print("Configuration error: --hours must be at least 1.")
+        return EXIT_CONFIG_ERROR
+    app_settings = _load_settings(AppSettings, env_prefix="")
+    if app_settings is None:
+        return EXIT_CONFIG_ERROR
+    supabase_settings = _load_settings(SupabaseSettings, env_prefix="SUPABASE_")
+    if supabase_settings is None:
+        return EXIT_CONFIG_ERROR
+    anthropic_settings = _load_settings(AnthropicSettings, env_prefix="ANTHROPIC_")
+    if anthropic_settings is None:
+        return EXIT_CONFIG_ERROR
+    encryptor = _build_encryptor(app_settings)
+    if encryptor is None:
+        return EXIT_CONFIG_ERROR
+    try:
+        personas = load_personas()
+    except PersonaLoadError as exc:
+        print(f"Configuration error: {exc}")
+        return EXIT_CONFIG_ERROR
+
+    gateway = gateway_factory(supabase_settings)
+
+    account_rows = gateway.select_rows(ACCOUNTS_TABLE, ACCOUNT_COLUMNS, eq={})
+    if not account_rows:
+        print("No synced account found. Run `inboxmind connect` then `inboxmind sync` first.")
+        return EXIT_FAILURE
+    account = account_rows[0]
+    account_id = str(account["id"])
+
+    profile_id_stored = persona_profile_id(gateway, persona_row_id=str(account.get("persona_id")))
+    profile_to_use = profile or profile_id_stored
+    if profile_to_use is None:
+        profile_to_use = _prompt_profile(sorted(personas))
+        if profile_to_use is None:
+            return EXIT_CONFIG_ERROR
+    persona = personas.get(profile_to_use)
+    if persona is None:
+        available = ", ".join(sorted(personas))
+        print(f"Configuration error: Unknown profile '{profile_to_use}'. Available: {available}.")
+        return EXIT_CONFIG_ERROR
+    if profile is not None:
+        link_account_persona(gateway, account_id=account_id, persona=persona)
+
+    if thread_id is None:
+        thread_id = _pick_draft_thread(gateway, account_id, hours=hours)
+        if thread_id is None:
+            return EXIT_FAILURE
+
+    thread_rows = gateway.select_rows(
+        EMAILS_TABLE,
+        DRAFT_THREAD_COLUMNS,
+        eq={"account_id": account_id, "thread_id": thread_id},
+    )
+    if not thread_rows:
+        print(f"Thread '{thread_id}' not found. Run `inboxmind brief` to see thread IDs.")
+        return EXIT_FAILURE
+
+    thread_rows.sort(key=lambda r: str(r.get("message_timestamp", "")))
+    thread_messages: list[ThreadMessage] = []
+    for row in thread_rows:
+        try:
+            body_text = encryptor.decrypt_text(str(row.get("body_ciphertext", "")))
+        except (InvalidToken, ValueError):
+            body_text = "(body unavailable)"
+        ts_raw = str(row.get("message_timestamp") or datetime.now(UTC).isoformat())
+        thread_messages.append(
+            ThreadMessage(
+                sender_email=str(row.get("sender_email", "")),
+                subject=str(row.get("subject", "")),
+                body_text=body_text,
+                received_at=datetime.fromisoformat(ts_raw),
+            )
+        )
+
+    agent = ResponseAgent(AnthropicClient(anthropic_settings.api_key))
+    request = DraftRequest(
+        account_id=account_id,
+        thread_id=thread_id,
+        persona=persona,
+        thread_messages=thread_messages,
+    )
+    draft = agent.run(request)
+    _print_draft(draft)
+    return EXIT_OK
+
+
+def _pick_draft_thread(gateway: TableGateway, account_id: str, *, hours: int) -> str | None:
+    from datetime import timedelta
+
+    cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
+    rows = gateway.select_rows(
+        EMAILS_TABLE,
+        "id,thread_id,sender_email,subject,message_timestamp",
+        eq={"account_id": account_id},
+        gte=("message_timestamp", cutoff),
+    )
+    if not rows:
+        print(f"No mail in the last {hours} hour(s). Try a wider window with --hours.")
+        return None
+    by_thread: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        tid = str(row.get("thread_id"))
+        ts = str(row.get("message_timestamp", ""))
+        if tid not in by_thread or ts > str(by_thread[tid].get("message_timestamp", "")):
+            by_thread[tid] = row
+    threads = sorted(
+        by_thread.values(), key=lambda r: str(r.get("message_timestamp", "")), reverse=True
+    )
+    print("\nRecent threads — pick one to draft a reply:")
+    for i, row in enumerate(threads, 1):
+        ts = str(row.get("message_timestamp", ""))[:16].replace("T", " ")
+        print(f"  {i}) {row.get('subject')} · {row.get('sender_email')} · {ts}")
+    try:
+        raw = input("\n  Thread number: ").strip()
+    except EOFError:
+        return None
+    if raw.isdigit() and 1 <= int(raw) <= len(threads):
+        return str(threads[int(raw) - 1]["thread_id"])
+    print(f"Invalid choice: {raw!r}.")
+    return None
+
+
+def _print_draft(draft: DraftResponse) -> None:
+    print("\n  ── DRAFT (NOT APPROVED — for review only; nothing is sent) ──")
+    print(f"  Subject: {draft.subject_recommendation}")
+    print(f"  Send timing: {draft.suggested_send_timing}")
+    print()
+    print(draft.body)
+    print(
+        f"\n  ── {draft.input_tokens} tokens in · {draft.output_tokens} tokens out"
+        " · edit distance: pending review ──"
+    )
 
 
 def _print_review_report(report: ReviewReport) -> None:
