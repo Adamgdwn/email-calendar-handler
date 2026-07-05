@@ -353,17 +353,23 @@ def _run_brief(gateway_factory: GatewayFactory, *, profile: str | None, hours: i
 
 
 class StdinReviewPrompter:
-    """Interactive accept/modify/reject at the terminal; the CLI's I/O boundary."""
+    """Interactive filing-decision prompt at the terminal; the CLI's I/O boundary."""
 
     def review(self, proposal: FilingProposal) -> ReviewInput:
-        print(f"\n[{proposal.urgency.value}] {proposal.subject}")
-        print(f"  proposed: {'/'.join(proposal.proposed_path)}")
-        print(f"  {proposal.rationale}")
-        answer = input("  [a]ccept / [m]odify / [r]eject / [s]kip? ").strip().lower()
+        path = "/".join(proposal.proposed_path)
+        print(f"\n  ── {proposal.urgency.value.upper()} ──────────────────────────────")
+        print(f"  Thread:  {proposal.subject}")
+        print(f"  File under:  {path}")
+        print()
+        print("  a = Yes, file it there   (InboxMind learns this folder fits)")
+        print("  m = No, use a different folder  (you type the path; it learns that instead)")
+        print("  r = Don't file this      (InboxMind learns no folder fits)")
+        print("  s = Skip                 (no feedback recorded, asked again next run)")
+        answer = input("\n  Choice [a/m/r/s]: ").strip().lower()
         if answer in {"a", "accept"}:
             return ReviewInput(decision=FeedbackDecision.ACCEPT)
         if answer in {"m", "modify"}:
-            raw = input("  new path (slash-separated): ").strip()
+            raw = input("  Folder path (slash-separated, e.g. Clients/Acme): ").strip()
             parts = [segment.strip() for segment in raw.split("/") if segment.strip()]
             return ReviewInput(decision=FeedbackDecision.MODIFY, modified_path=parts or None)
         if answer in {"r", "reject"}:
