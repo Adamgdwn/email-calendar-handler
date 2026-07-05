@@ -286,6 +286,22 @@ requires the acceptance-rate trigger, a governance preflight review, updated
 risk register entries, and a scope-guard change that keeps per-action
 `human_approved` enforcement.
 
+## Real-Run Status (2026-07-05)
+
+The real-run environment is wired (see `START_HERE.md`): `.env` targets Supabase
+project `bmwrgspguatpduvoiexs` (schema applied) and reuses M365 app `9aeeeae6-…`
+for mailbox `adamgoodwin@guidedailabs.com` (read-only). A desktop launcher
+exists (`scripts/inboxmind-app.sh`, installed via `scripts/install-launcher.sh`).
+The only remaining manual step is Adam running `inboxmind connect` once. Ambient
+master-env `SUPABASE_*` overrides `.env`; the launcher auto-unsets it.
+
+## Future: Global UI (parked)
+
+The terminal is a stopgap. The intended form factor is a polished, web-like
+daily-briefing UI (sophisticated newsfeed style) over the same deterministic
+pipeline, plus multi-account support (read all inboxes, response tone per
+account). Not yet scoped into a chunk.
+
 ## Current Recommendation
 
 Say:
