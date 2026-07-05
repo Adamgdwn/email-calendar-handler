@@ -77,7 +77,7 @@ Closed issues #1-#8.
 
 ### Chunk 7: Ignition — Real Graph Auth And `inboxmind connect`
 
-Status: next up.
+Status: delivered 2026-07-04.
 
 Goal: make the repository runnable for the first time — acquire a real
 delegated token with read-only scopes and cache it encrypted.
@@ -267,9 +267,9 @@ risk register entries, and a scope-guard change that keeps per-action
 Say:
 
 ```text
-Carry on with chunk 7.
+Carry on with chunk 8.
 ```
 
-That makes the repository runnable for the first time: MSAL device-code auth,
-encrypted token cache, real Graph transport, and `inboxmind connect` — no real
-mailbox content is persisted until chunk 8.
+That delivers first light: real mailbox content flowing through delta sync,
+dedupe, and encryption into Supabase via `inboxmind sync`, using the
+`GraphAuthenticator` and `HttpxGraphTransport` shipped in chunk 7.

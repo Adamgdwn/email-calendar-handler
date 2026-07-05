@@ -73,6 +73,43 @@ def test_graph_oauth_settings_reject_write_capable_mail_scopes(
         )
 
 
+def test_graph_oauth_settings_support_public_client_device_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_graph_env(monkeypatch)
+    monkeypatch.setenv("MICROSOFT_CLIENT_ID", "client-id")
+
+    settings = MicrosoftGraphOAuthSettings()
+
+    assert settings.client_secret is None
+    assert settings.redirect_uri is None
+
+
+def test_graph_oauth_settings_treat_blank_optional_env_as_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_graph_env(monkeypatch)
+    monkeypatch.setenv("MICROSOFT_CLIENT_ID", "client-id")
+    monkeypatch.setenv("MICROSOFT_CLIENT_SECRET", "")
+    monkeypatch.setenv("MICROSOFT_REDIRECT_URI", "  ")
+
+    settings = MicrosoftGraphOAuthSettings()
+
+    assert settings.client_secret is None
+    assert settings.redirect_uri is None
+
+
+def test_build_authorization_url_requires_redirect_uri(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_graph_env(monkeypatch)
+    monkeypatch.setenv("MICROSOFT_CLIENT_ID", "client-id")
+    settings = MicrosoftGraphOAuthSettings()
+
+    with pytest.raises(ValueError, match="MICROSOFT_REDIRECT_URI"):
+        build_authorization_url(settings, state="state-token")
+
+
 def test_oauth_consent_requires_human_confirmation() -> None:
     with pytest.raises(ValidationError):
         OAuthConsentRecord(
