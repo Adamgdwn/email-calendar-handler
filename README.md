@@ -35,17 +35,18 @@ inboxmind draft     # persona-toned reply drafts, terminal/clipboard only
 ```
 
 Runnable today (2026-07-04): `inboxmind connect` (chunk 7) — device-code
-sign-in, explicit y/N consent, Fernet-encrypted token cache — and
+sign-in, explicit y/N consent, Fernet-encrypted token cache —
 `inboxmind sync` (chunk 8) — full-then-incremental Graph delta sync with
-dedupe into ciphertext-only Supabase storage. See `docs/manual.md` for
-app-registration and Supabase setup.
+dedupe into ciphertext-only Supabase storage — and `inboxmind brief`
+(chunk 9) — persona-keyword classification over synced mail rendered as the
+first Morning Brief (`brief-YYYY-MM-DD.md`). See `docs/manual.md` for
+app-registration, Supabase, and persona setup.
 
 For context-cleared work sessions, use
 [`docs/production-instructions.md`](docs/production-instructions.md) as the
-single production handoff document. Example prompt: "carry on with chunk 9."
+single production handoff document. Example prompt: "carry on with chunk 10."
 
 Next focus:
-- chunk 9: deterministic Morning Brief with persona keyword wiring
 - chunk 10: read-only calendar (`Calendars.Read`) agenda and meeting-aware triage
 - chunks 11-12: review/learning loop, then local-only drafts
 

@@ -41,6 +41,7 @@ class TableGateway(Protocol):
         *,
         eq: dict[str, str],
         in_filter: tuple[str, list[str]] | None = None,
+        gte: tuple[str, str] | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def insert_rows(self, table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
@@ -67,6 +68,7 @@ class SupabaseTableGateway:
         *,
         eq: dict[str, str],
         in_filter: tuple[str, list[str]] | None = None,
+        gte: tuple[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         query = self._client.table(table).select(columns)
         for column, value in eq.items():
@@ -74,6 +76,9 @@ class SupabaseTableGateway:
         if in_filter is not None:
             column, values = in_filter
             query = query.in_(column, values)
+        if gte is not None:
+            column, bound = gte
+            query = query.gte(column, bound)
         return _dict_rows(query.execute().data)
 
     def insert_rows(self, table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

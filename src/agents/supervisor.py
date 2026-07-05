@@ -10,6 +10,7 @@ from src.agents.relationship_agent import RelationshipAgent
 from src.agents.response_agent import ResponseAgent
 from src.models.email_models import Classification, ClassificationInput
 from src.models.filing_models import FilingDecision, FilingRule
+from src.models.persona_models import PersonaProfile
 
 
 @dataclass(frozen=True)
@@ -22,10 +23,10 @@ class EmailSupervisor:
     learning_agent: LearningAgent
 
     @classmethod
-    def default(cls) -> EmailSupervisor:
+    def default(cls, persona: PersonaProfile) -> EmailSupervisor:
         return cls(
             ingest_agent=IngestAgent(),
-            classification_agent=ClassificationAgent(),
+            classification_agent=ClassificationAgent(persona),
             relationship_agent=RelationshipAgent(),
             filing_agent=FilingAgent(),
             response_agent=ResponseAgent(),

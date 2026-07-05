@@ -1,8 +1,8 @@
 """InboxMind command-line interface.
 
-Chunk 8 surface: `inboxmind connect` and `inboxmind sync`. Later chunks add
-brief, review, and draft. Both commands are read-only against the mailbox;
-connect requires an explicit human yes before any sign-in.
+Chunk 9 surface: `inboxmind connect`, `inboxmind sync`, and `inboxmind brief`.
+Later chunks add review and draft. Every command is read-only against the
+mailbox; connect requires an explicit human yes before any sign-in.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import os
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -19,6 +19,13 @@ from postgrest import APIError
 from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.brief.renderer import render_brief
+from src.brief_service import (
+    DEFAULT_LOOKBACK_HOURS,
+    BriefDataError,
+    PersonaSelectionError,
+    run_brief,
+)
 from src.ingestion.graph_auth import MicrosoftGraphOAuthSettings
 from src.ingestion.graph_token_cache import (
     ClientFactory,
@@ -32,6 +39,7 @@ from src.ingestion.graph_transport import GraphTransportError, HttpxGraphTranspo
 from src.memory.supabase_client import SupabaseSettings, TableGateway, build_table_gateway
 from src.models.auth_models import OAuthConsentRecord
 from src.models.email_models import Provider
+from src.personas.loader import PersonaLoadError, load_personas
 from src.sync_service import SyncReport, run_sync
 from src.utils.encryption import FieldEncryptor
 
@@ -73,6 +81,8 @@ def main(
         return _run_connect(client_factory)
     if args.command == "sync":
         return _run_sync(client_factory, gateway_factory, transport_factory)
+    if args.command == "brief":
+        return _run_brief(gateway_factory, profile=args.profile, hours=args.hours)
     parser.error(f"unknown command: {args.command}")
 
 
@@ -89,6 +99,20 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "sync",
         help="Pull mailbox changes through delta sync into encrypted Supabase storage.",
+    )
+    brief_parser = subparsers.add_parser(
+        "brief",
+        help="Render the Morning Brief from synced mail (terminal + brief-YYYY-MM-DD.md).",
+    )
+    brief_parser.add_argument(
+        "--profile",
+        help="Persona profile for classification; updates the account's stored persona.",
+    )
+    brief_parser.add_argument(
+        "--hours",
+        type=int,
+        default=DEFAULT_LOOKBACK_HOURS,
+        help=f"Lookback window in hours (default {DEFAULT_LOOKBACK_HOURS}).",
     )
     return parser
 
@@ -194,6 +218,62 @@ def _run_sync(
         transport.close()
     _print_sync_report(report)
     return EXIT_OK
+
+
+def _run_brief(gateway_factory: GatewayFactory, *, profile: str | None, hours: int) -> int:
+    if hours < 1:
+        print("Configuration error: --hours must be at least 1.")
+        return EXIT_CONFIG_ERROR
+    app_settings = _load_settings(AppSettings, env_prefix="")
+    if app_settings is None:
+        return EXIT_CONFIG_ERROR
+    supabase_settings = _load_settings(SupabaseSettings, env_prefix="SUPABASE_")
+    if supabase_settings is None:
+        return EXIT_CONFIG_ERROR
+    encryptor = _build_encryptor(app_settings)
+    if encryptor is None:
+        return EXIT_CONFIG_ERROR
+    try:
+        personas = load_personas()
+    except PersonaLoadError as exc:
+        print(f"Configuration error: {exc}")
+        return EXIT_CONFIG_ERROR
+
+    gateway = gateway_factory(supabase_settings)
+    try:
+        brief = run_brief(
+            gateway=gateway,
+            encryptor=encryptor,
+            personas=personas,
+            profile_override=profile,
+            lookback_hours=hours,
+        )
+    except PersonaSelectionError as exc:
+        print(f"Configuration error: {exc}")
+        return EXIT_CONFIG_ERROR
+    except BriefDataError as exc:
+        print(f"Brief failed: {exc}")
+        return EXIT_FAILURE
+    except APIError as exc:
+        print(f"Brief failed reading Supabase: {exc.message}")
+        print("Check SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY and apply supabase/schema.sql.")
+        return EXIT_FAILURE
+    except httpx.HTTPError as exc:
+        print(f"Brief failed reaching Supabase: {exc!r}")
+        return EXIT_FAILURE
+    markdown = render_brief(brief)
+    print(markdown)
+    path = _write_brief_file(app_settings.inboxmind_home, brief.brief_date, markdown)
+    print(f"Brief written to {path}")
+    return EXIT_OK
+
+
+def _write_brief_file(home: Path, brief_date: date, markdown: str) -> Path:
+    briefs_dir = home / "briefs"
+    briefs_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = briefs_dir / f"brief-{brief_date.isoformat()}.md"
+    path.write_text(markdown, encoding="utf-8")
+    return path
 
 
 def _print_sync_report(report: SyncReport) -> None:
