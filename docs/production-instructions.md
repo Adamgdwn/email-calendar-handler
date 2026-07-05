@@ -1,6 +1,6 @@
 # Production Instructions
 
-Last Updated: 2026-07-05
+Last Updated: 2026-07-05 (chunk 13 Inbox Audit added; old chunk 13 renumbered to 14)
 
 Use this document as the single restart point after clearing the context window.
 When the user says "carry on with chunk N", load this file first, then execute
@@ -266,7 +266,145 @@ Done criteria:
   `src/utils/token_counter.py`; a cost line (tokens in/out) prints per draft.
 - Draft edit distance is logged as a quality signal for later evaluation.
 
-### Chunk 13 (Optional): LLM Classification Assist
+### Chunk 13: Inbox Audit — `inboxmind audit`
+
+Goal: one-time (or on-demand) deep scan of the user's full mailbox folder tree
+and message metadata, producing a proposed folder hierarchy with rationale,
+written to a Markdown audit report. No mailbox writes. No bodies in the
+pipeline. Requires chunk 12 first (reuses `src/llm/anthropic_client.py`).
+
+Read:
+- `src/ingestion/CLAUDE.md`
+- `src/ingestion/graph_transport.py`
+- `src/llm/anthropic_client.py` (created in chunk 12)
+- `src/models/audit_models.py` (created in this chunk)
+
+Expected files:
+- `src/models/audit_models.py` — `FolderNode`, `MessageMetadataRow`,
+  `ClusterGroup`, `ClusterSummary`, `ProposedFolder`, `FolderAuditProposal`,
+  `AuditReport`
+- `src/inbox_audit/__init__.py`
+- `src/inbox_audit/CLAUDE.md`
+- `src/inbox_audit/folder_fetcher.py` — Graph `/me/mailFolders` tree +
+  per-folder message metadata pages (no body decryption)
+- `src/inbox_audit/cluster_builder.py` — deterministic grouping into
+  `ClusterSummary` (domain frequency, folder utilization, subject keyword
+  clusters)
+- `src/inbox_audit/audit_synthesizer.py` — single Anthropic call via
+  `src/llm/anthropic_client.py`; receives compact cluster summary, returns
+  validated `FolderAuditProposal`
+- `src/inbox_audit/audit_renderer.py` — Markdown renderer; writes to
+  `INBOXMIND_HOME/audits/audit-YYYY-MM-DD.md` and prints terminal summary
+- `src/cli.py` gains `audit [--months N]`
+- `tests/unit/test_folder_fetcher.py`, `tests/unit/test_cluster_builder.py`,
+  `tests/unit/test_audit_synthesizer.py`, `tests/unit/test_audit_renderer.py`
+
+Pydantic model summary (`src/models/audit_models.py`):
+
+```python
+class FolderNode(BaseModel):
+    folder_id: str
+    display_name: str
+    parent_id: str | None
+    message_count: int
+    child_folders: list["FolderNode"] = []
+
+class MessageMetadataRow(BaseModel):
+    folder_path: list[str]      # e.g. ["Inbox", "Projects"]
+    sender_domain: str           # extracted from sender address
+    subject_prefix: str          # subject[:60]
+    received_month: str          # YYYY-MM
+
+class ClusterGroup(BaseModel):
+    label: str
+    dominant_folder: str         # existing folder with most volume
+    message_count: int
+    sample_subjects: list[str]   # up to 5
+
+class ClusterSummary(BaseModel):
+    account_email: str
+    months_scanned: int
+    total_messages: int
+    total_folders: int
+    current_folder_tree: list[FolderNode]
+    domain_clusters: list[ClusterGroup]
+    folder_utilization: dict[str, int]    # folder_path_str → count
+    subject_keyword_clusters: list[ClusterGroup]
+
+class ProposedFolder(BaseModel):
+    path: list[str]              # e.g. ["Clients", "Acme Corp"]
+    rationale: str
+    source_folders: list[str]    # existing folders this consolidates
+    estimated_volume: int
+
+class FolderAuditProposal(BaseModel):
+    account_email: str
+    generated_at: datetime
+    proposed_tree: list[ProposedFolder]
+    folders_to_retire: list[str]
+    folders_to_keep: list[str]
+    key_changes: list[str]
+    implementation_note: str
+
+class AuditReport(BaseModel):
+    summary: ClusterSummary
+    proposal: FolderAuditProposal
+    report_path: Path
+```
+
+Graph API calls (read-only, no new scopes required):
+- `GET /me/mailFolders?$expand=childFolders&$top=100` — full folder tree
+- `GET /me/mailFolders/{id}/messages?$select=sender,subject,receivedDateTime&$top=999&$filter=receivedDateTime ge {cutoff}` — metadata pages per folder, paginated
+
+ClusterBuilder algorithm:
+1. Group `MessageMetadataRow` list by `sender_domain` → frequency-sort → top
+   30 domains get individual `ClusterGroup` entries; the rest roll up to
+   `"other"`.
+2. Tally `folder_utilization` from `folder_path` fields.
+3. Extract the 5 most common non-stopword words from `subject_prefix` fields
+   → `subject_keyword_clusters`.
+
+AuditSynthesizer prompt contract:
+- System: "You are a filing system consultant for a busy professional."
+- User: compact cluster summary rendered as plain text tables (folder tree,
+  domain frequency, folder utilization, keyword clusters) — never raw email
+  content.
+- Constraint: max 3 folder depth, max 15 top-level folders, JSON response only.
+- Response validated against `FolderAuditProposal` schema; any mismatch raises
+  `AuditSynthesisError`.
+
+AuditRenderer output:
+- Terminal: proposed tree as indented list + `key_changes` bullets + token
+  cost line.
+- File: full Markdown report at `INBOXMIND_HOME/audits/audit-YYYY-MM-DD.md`
+  (directory created if absent) with `## Current Structure`, `## Proposed
+  Structure`, `## Migration Notes`, `## Folders to Retire`, `## Folders to Keep`.
+
+Launcher: add option `6) audit  — propose a better folder structure` to
+`scripts/inboxmind-app.sh`.
+
+Done criteria:
+- `inboxmind audit` fetches the full folder tree and message metadata for the
+  last 12 months (configurable with `--months`), pages all results, and builds
+  a `ClusterSummary` without decrypting any body ciphertext.
+- `ClusterBuilder` groups by sender domain, folder utilization, and subject
+  keyword clusters entirely deterministically; no LLM involvement.
+- `AuditSynthesizer` calls Anthropic exactly once via
+  `src/llm/anthropic_client.py`; the LLM prompt contains only the compact
+  cluster summary, never raw email content; token cost (in/out) prints to
+  terminal.
+- The proposal is a `FolderAuditProposal` Pydantic model; validation rejects
+  any response that does not match the schema.
+- `AuditRenderer` writes the report to `INBOXMIND_HOME/audits/audit-YYYY-MM-DD.md`
+  (creating the directory if needed) and prints a terminal summary.
+- No Graph write calls are made; no mailbox state is modified; `human_approved`
+  is not required (output is a read-only report).
+- Tests cover: folder tree fetch with pagination (fake transport), cluster
+  grouping for a known input, synthesizer with fake LLM client, renderer
+  output structure.
+- Option 6 appears in the launcher menu.
+
+### Chunk 14 (Optional): LLM Classification Assist
 
 Goal: spend tokens only where deterministic rules are weak.
 
@@ -316,3 +454,15 @@ constraints come from the persona YAML, and output goes to terminal/clipboard
 and the brief only — nothing is written to the mailbox and nothing is sent, so
 `human_approved` stays false. Token budgets from agent class attributes are
 enforced via `src/utils/token_counter.py`, with a per-draft cost line.
+
+After chunk 12, say:
+
+```text
+Carry on with chunk 13.
+```
+
+That adds `inboxmind audit`: a one-time deep scan of the full mailbox folder
+tree and message metadata (no body content) that proposes a better filing
+hierarchy via a single Anthropic call against a compact cluster summary.
+Output is a Markdown audit report at `INBOXMIND_HOME/audits/`; no mailbox
+writes. Requires the Anthropic client from chunk 12.

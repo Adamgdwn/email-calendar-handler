@@ -1,6 +1,6 @@
 # Roadmap
 
-Last Updated: 2026-07-04
+Last Updated: 2026-07-05
 
 ## North Star
 
@@ -30,7 +30,10 @@ Remaining slices, in order (details in
    LearningAgent rule promotion, acceptance-rate metric.
 6. Chunk 12 — Drafts for review: persona-toned Anthropic drafts to
    terminal/clipboard only, `inboxmind draft`.
-7. Chunk 13 (optional) — LLM classification assist where deterministic
+7. Chunk 13 — Inbox Audit: full folder-tree + metadata scan, deterministic
+   clustering, single Anthropic synthesis call, proposed folder hierarchy
+   written to `INBOXMIND_HOME/audits/audit-YYYY-MM-DD.md`. Read-only.
+8. Chunk 14 (optional) — LLM classification assist where deterministic
    confidence is low, budget-guarded.
 
 ### v1 Ship Gate (Definition of Usable)
