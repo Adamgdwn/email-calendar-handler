@@ -177,7 +177,7 @@ Done criteria:
 
 ### Chunk 10: Calendar Read — Agenda In The Brief
 
-Status: delivered 2026-07-04 (PR #NN). Built from
+Status: delivered 2026-07-04 (PR #21). Built from
 `docs/2026-07-04 - Chunk 10 completion plan.md`. Real-run verification
 remains a manual step for Adam: add the `Calendars.Read` API permission to
 the app registration, apply the `calendar_events` block of
