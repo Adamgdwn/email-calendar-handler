@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from src.models.email_models import Provider
+
+AccountType = Literal["personal", "organizational"]
 
 
 class OAuthConsentRecord(BaseModel):
@@ -14,6 +17,7 @@ class OAuthConsentRecord(BaseModel):
     scopes: list[str] = Field(min_length=1)
     granted_at: datetime
     tenant_id: str | None = None
+    account_type: AccountType | None = None
     human_confirmed: bool = True
 
     @field_validator("granted_at")

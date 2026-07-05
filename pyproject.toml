@@ -1,6 +1,10 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
 [project]
 name = "inboxmind"
-version = "0.1.0"
+version = "0.2.0"
 description = "Human-approved email intelligence pipeline scaffold for a single-account InboxMind MVP."
 readme = "README.md"
 requires-python = "==3.12.*"
@@ -8,6 +12,7 @@ dependencies = [
   "anthropic==0.102.0",
   "cryptography==48.0.1",
   "email-validator==2.3.0",
+  "httpx==0.28.1",
   "msal==1.36.0",
   "pydantic==2.13.4",
   "pydantic-settings==2.14.2",
@@ -15,6 +20,12 @@ dependencies = [
   "supabase==2.30.0",
   "tenacity==9.1.2",
 ]
+
+[project.scripts]
+inboxmind = "src.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
 
 [dependency-groups]
 dev = [
@@ -44,3 +55,9 @@ strict = true
 warn_unused_configs = true
 plugins = ["pydantic.mypy"]
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+# msal ships no py.typed; typed access goes through the DeviceFlowClient and
+# TokenCacheState protocols in src/ingestion/graph_token_cache.py.
+module = ["msal"]
+ignore_missing_imports = true

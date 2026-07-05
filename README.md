@@ -34,12 +34,15 @@ inboxmind review    # accept/modify/reject proposals; feeds the learning loop
 inboxmind draft     # persona-toned reply drafts, terminal/clipboard only
 ```
 
+Runnable today: `inboxmind connect` shipped in chunk 7 (2026-07-04) —
+device-code sign-in, explicit y/N consent, Fernet-encrypted token cache. See
+`docs/manual.md` for app-registration setup.
+
 For context-cleared work sessions, use
 [`docs/production-instructions.md`](docs/production-instructions.md) as the
-single production handoff document. Example prompt: "carry on with chunk 7."
+single production handoff document. Example prompt: "carry on with chunk 8."
 
 Next focus:
-- chunk 7: MSAL device-code auth, encrypted token cache, real Graph transport
 - chunk 8: end-to-end incremental sync into encrypted Supabase storage
 - chunk 9: deterministic Morning Brief with persona keyword wiring
 - chunk 10: read-only calendar (`Calendars.Read`) agenda and meeting-aware triage

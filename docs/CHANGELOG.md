@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0 - 2026-07-04
+
+- Chunk 7 (Ignition): the repository is runnable for the first time through
+  the `inboxmind` CLI (`[project.scripts]` entry point, hatchling packaging).
+- `inboxmind connect` signs in with the MSAL device-code flow (public client:
+  `client_secret` and `redirect_uri` are now optional and reserved for the
+  authorization-code fallback), requires an explicit y/N human confirmation,
+  and appends an `OAuthConsentRecord` — now carrying personal-vs-organizational
+  account type — to a local consent log.
+- The MSAL token cache persists only as Fernet ciphertext
+  (`ENCRYPTION_KEY_BASE64`) with 0600 file permissions; access tokens stay
+  `SecretStr`-wrapped in memory and never print.
+- Added `HttpxGraphTransport`, the first real `GraphTransport`: Graph error
+  payloads pass through for stale-delta detection, 429/5xx raise a typed
+  retryable error, and `httpx==0.28.1` (already a transitive dependency) is
+  exact-pinned.
+- 32 new unit tests (71 total) cover cache round-trip encryption, device-flow
+  success/failure, silent reuse, header injection, and CLI consent/config
+  paths — fakes only, no network.
+
 ## 0.1.1 - 2026-07-04
 
 - Merged PR #9 (Milestone 1.2 Outlook ingestion foundation, chunks 0-6) and
