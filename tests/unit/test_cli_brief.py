@@ -146,18 +146,21 @@ def test_second_brief_run_reclassifies_nothing(
     assert [dict(row)["classification"] for row in gateway.rows("emails")] == first_classifications
 
 
-def test_brief_without_profile_on_placeholder_persona_exits_config_error(
-    brief_env: Path, capsys: pytest.CaptureFixture[str]
+def test_brief_without_profile_on_placeholder_persona_prompts_then_exits_on_no_input(
+    brief_env: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gateway = FakeTableGateway()
     seed_mailbox(gateway, build_encryptor_from_env())
+    # Simulate non-interactive stdin; _prompt_profile should return None → config error.
+    monkeypatch.setattr("builtins.input", lambda _prompt: (_ for _ in ()).throw(EOFError()))
 
     exit_code = main(["brief"], gateway_factory=lambda _s: gateway)
 
     output = capsys.readouterr().out
     assert exit_code == 2
-    assert "--profile" in output
-    assert "consulting" in output
+    assert "consulting" in output  # profile list was shown before EOF
 
 
 def test_brief_with_unknown_profile_exits_config_error(

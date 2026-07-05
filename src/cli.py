@@ -260,6 +260,23 @@ def _run_sync(
     return EXIT_OK
 
 
+def _prompt_profile(choices: list[str]) -> str | None:
+    """Interactively pick a persona profile; returns None if input is invalid or non-interactive."""
+    print("\nFirst run: no persona profile linked yet. Choose one:")
+    for i, name in enumerate(choices, 1):
+        print(f"  {i}) {name}")
+    try:
+        raw = input("Enter number or name: ").strip().lower()
+    except EOFError:
+        return None
+    if raw.isdigit() and 1 <= int(raw) <= len(choices):
+        return choices[int(raw) - 1]
+    if raw in choices:
+        return raw
+    print(f"Invalid choice: {raw!r}.")
+    return None
+
+
 def _run_brief(gateway_factory: GatewayFactory, *, profile: str | None, hours: int) -> int:
     if hours < 1:
         print("Configuration error: --hours must be at least 1.")
@@ -280,17 +297,44 @@ def _run_brief(gateway_factory: GatewayFactory, *, profile: str | None, hours: i
         return EXIT_CONFIG_ERROR
 
     gateway = gateway_factory(supabase_settings)
+    _profile = profile
     try:
         brief = run_brief(
             gateway=gateway,
             encryptor=encryptor,
             personas=personas,
-            profile_override=profile,
+            profile_override=_profile,
             lookback_hours=hours,
         )
     except PersonaSelectionError as exc:
-        print(f"Configuration error: {exc}")
-        return EXIT_CONFIG_ERROR
+        if _profile is not None:
+            print(f"Configuration error: {exc}")
+            return EXIT_CONFIG_ERROR
+        # No profile linked yet — prompt and retry once.
+        _profile = _prompt_profile(sorted(personas))
+        if _profile is None:
+            return EXIT_CONFIG_ERROR
+        try:
+            brief = run_brief(
+                gateway=gateway,
+                encryptor=encryptor,
+                personas=personas,
+                profile_override=_profile,
+                lookback_hours=hours,
+            )
+        except PersonaSelectionError as exc2:
+            print(f"Configuration error: {exc2}")
+            return EXIT_CONFIG_ERROR
+        except BriefDataError as exc2:
+            print(f"Brief failed: {exc2}")
+            return EXIT_FAILURE
+        except APIError as exc2:
+            print(f"Brief failed reading Supabase: {exc2.message}")
+            print("Check SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY and apply supabase/schema.sql.")
+            return EXIT_FAILURE
+        except httpx.HTTPError as exc2:
+            print(f"Brief failed reaching Supabase: {exc2!r}")
+            return EXIT_FAILURE
     except BriefDataError as exc:
         print(f"Brief failed: {exc}")
         return EXIT_FAILURE
