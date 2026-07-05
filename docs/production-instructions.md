@@ -77,7 +77,7 @@ Closed issues #1-#8.
 
 ### Chunk 7: Ignition — Real Graph Auth And `inboxmind connect`
 
-Status: delivered 2026-07-04.
+Status: delivered 2026-07-04 (PR #18).
 
 Goal: make the repository runnable for the first time — acquire a real
 delegated token with read-only scopes and cache it encrypted.
