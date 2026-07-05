@@ -11,6 +11,17 @@
 # Rollback: delete this file and ~/.local/share/applications/inboxmind.desktop.
 set -uo pipefail
 
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+
+# When launched without a terminal (e.g. double-clicking the desktop icon on
+# COSMIC, which does not honour Terminal=true), reopen inside a terminal window
+# so the interactive menu has a TTY. cosmic-term needs `--` before the command.
+if [ "${1:-}" != "--in-term" ] && [ ! -t 0 ]; then
+  if command -v cosmic-term >/dev/null 2>&1; then exec cosmic-term -- "$SELF" --in-term "$@"; fi
+  if command -v x-terminal-emulator >/dev/null 2>&1; then exec x-terminal-emulator -e "$SELF" --in-term "$@"; fi
+fi
+[ "${1:-}" = "--in-term" ] && shift
+
 # Force the project's own .env config to win over ambient master-env creds.
 unset -v SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_ANON_KEY \
          SUPABASE_PROJECT_REF SUPABASE_ACCESS_TOKEN 2>/dev/null || true

@@ -6,7 +6,8 @@
 #   ~/Desktop/InboxMind.desktop                      (desktop icon)
 #   ~/.local/share/applications/inboxmind.desktop    (app-menu entry)
 #   ~/.local/share/icons/hicolor/**/apps/inboxmind.* (themed icon)
-# Both use Terminal=true so COSMIC opens cosmic-term running the menu.
+# Entries use Terminal=false (COSMIC's desktop double-click ignores
+# Terminal=true); the wrapper reopens itself inside cosmic-term instead.
 #
 # Uninstall:  scripts/install-launcher.sh --uninstall
 set -euo pipefail
@@ -33,7 +34,7 @@ GenericName=Email & Calendar Intelligence
 Comment=Connect a mailbox, sync, and open today's Morning Brief
 Exec="$WRAPPER"
 Path=$REPO
-Terminal=true
+Terminal=false
 Icon=$2
 Categories=Office;Email;
 Keywords=inbox;email;calendar;brief;outlook;
