@@ -54,16 +54,26 @@ while true; do
   ┌────────────────────────────────────────────────┐
   │                  InboxMind                      │
   ├────────────────────────────────────────────────┤
-  │  1) connect  — sign in to a mailbox (one-time)  │
-  │  2) sync     — pull new mail + calendar         │
-  │  3) brief    — today's Morning Brief            │
-  │  4) review   — accept / modify / reject         │
-  │  5) open the latest brief file                  │
-  │  q) quit                                         │
+  │  0) morning routine  — sync + brief + review   │
+  ├────────────────────────────────────────────────┤
+  │  1) connect  — sign in to a mailbox (one-time) │
+  │  2) sync     — pull new mail + calendar        │
+  │  3) brief    — today's Morning Brief           │
+  │  4) review   — accept / modify / reject        │
+  │  5) open the latest brief file                 │
+  │  q) quit                                       │
   └────────────────────────────────────────────────┘
 MENU
   read -rp "  choose: " choice
   case "$choice" in
+    0)
+      # ROUTINE STUB: future versions will let each persona define its own morning
+      # sequence here (e.g. consulting → sync+brief+draft+review; city_council →
+      # sync+brief+calendar-prep+review). Routine configs will live in persona YAML.
+      run sync || true
+      run brief || true
+      run review || true
+      ;;
     1) run connect || true ;;
     2) run sync || true ;;
     3) run brief || true ;;

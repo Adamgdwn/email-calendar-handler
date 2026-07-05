@@ -111,7 +111,6 @@ def test_brief_happy_path_classifies_persists_and_writes_file(
     assert "# Morning Brief" in output
     assert "## Critical" in output
     assert "Contract deadline for the proposal" in output
-    assert "2 classified now" in output
 
     emails = gateway.rows("emails")
     assert all(row["urgency"] is not None for row in emails)
@@ -140,9 +139,8 @@ def test_second_brief_run_reclassifies_nothing(
 
     assert main(["brief"], gateway_factory=lambda _s: gateway) == 0
 
-    output = capsys.readouterr().out
-    assert "0 classified now" in output
-    assert "2 already classified" in output
+    capsys.readouterr()
+    # Classifications must not change on re-run — gateway rows are the source of truth.
     assert [dict(row)["classification"] for row in gateway.rows("emails")] == first_classifications
 
 

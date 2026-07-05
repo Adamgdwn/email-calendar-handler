@@ -168,6 +168,6 @@ def test_meeting_attendee_boosts_display_urgency_only() -> None:
     assert [a.email for a in brief.events[0].attendees] == ["news@example.com"]
 
     markdown = render_brief(brief)
-    assert markdown.index("## Agenda") < markdown.index("Triage:")
+    assert markdown.index("## Agenda") < markdown.index("## Normal")
     assert "- 17:00-17:30 **Newsletter planning**" in markdown
     assert "boosted from low: meeting today with news@example.com" in markdown

@@ -27,43 +27,87 @@ _BAND_TITLES: dict[UrgencyBand, str] = {
 
 
 def render_brief(brief: MorningBrief) -> str:
-    lines: list[str] = [f"# Morning Brief - {brief.brief_date.isoformat()}", ""]
+    lines: list[str] = []
+
+    # Header — natural date, no developer-speak
+    day = brief.brief_date.strftime("%a %b %-d")
+    generated = brief.generated_at.strftime("%H:%M %Z")
+    lines.append(f"# Morning Brief — {day}")
     lines.append(
-        f"Account: {brief.account_email} - {brief.persona_display_name} ({brief.profile_id})"
+        f"{brief.account_email} · {brief.persona_display_name} · "
+        f"last {brief.lookback_hours} h · {generated}"
     )
-    lines.append(
-        f"Window: last {brief.lookback_hours} hours, generated "
-        f"{brief.generated_at.strftime('%Y-%m-%d %H:%M %Z')}"
-    )
-    lines.extend(["", "## Agenda", ""])
+    lines.extend(["", _opener(brief), ""])
+
+    # Agenda section — only rendered when there are events
     if brief.events:
+        lines.extend(["## Agenda", ""])
         lines.extend(_event_line(event) for event in brief.events)
-    else:
-        lines.append("No meetings today.")
-    lines.append("")
-    lines.append(_triage_line(brief))
+        lines.append("")
+
+    # Mail sections with proposals inlined under each thread
+    proposals_by_subject = _group_proposals_by_subject(brief.proposals)
     for band in URGENCY_ORDER:
-        section = [thread for thread in brief.threads if thread.urgency == band]
+        section = [t for t in brief.threads if t.urgency == band]
         if not section:
             continue
-        lines.extend(["", f"## {_BAND_TITLES[band]}", ""])
-        lines.extend(_thread_line(thread) for thread in section)
+        lines.extend([f"## {_BAND_TITLES[band]}", ""])
+        for thread in section:
+            lines.append(_thread_line(thread))
+            for prop in proposals_by_subject.get(thread.subject, []):
+                path = "/".join(prop.proposed_path)
+                lines.append(f"  → Proposal: {path} · `{prop.proposal_id}`")
+        lines.append("")
+
     if not brief.threads:
-        lines.extend(["", "No new mail in this window."])
-    lines.extend(["", "## Filing proposals", ""])
-    if brief.proposals:
-        lines.append("Review these with `inboxmind review` (accept / modify / reject).")
-        lines.extend(_proposal_line(proposal) for proposal in brief.proposals)
-    else:
-        lines.append("No filing proposals in this window.")
-    lines.extend(["", "## Filing feedback", "", _acceptance_line(brief.acceptance)])
+        lines.extend(["No new mail in this window.", ""])
+
+    lines.append(_acceptance_line(brief.acceptance))
     lines.append("")
     return "\n".join(lines)
 
 
+def _opener(brief: MorningBrief) -> str:
+    n_events = len(brief.events)
+    n_threads = len(brief.threads)
+
+    if n_events == 0:
+        calendar = "No meetings today."
+    elif n_events == 1:
+        calendar = "One meeting today."
+    else:
+        calendar = f"{n_events} meetings today."
+
+    if n_threads == 0:
+        mail = "Inbox is clear."
+    else:
+        critical = sum(1 for t in brief.threads if t.urgency == UrgencyBand.CRITICAL)
+        high = sum(1 for t in brief.threads if t.urgency == UrgencyBand.HIGH)
+        if critical > 0:
+            s = "" if critical == 1 else "s"
+            mail = f"{critical} critical thread{s} need{'s' if critical == 1 else ''} attention."
+        elif high > 0:
+            s = "" if high == 1 else "s"
+            mail = f"{high} high-priority thread{s} to review."
+        else:
+            s = "thread" if n_threads == 1 else "threads"
+            mail = f"Quiet inbox — {n_threads} low-priority {s}."
+
+    return f"{calendar} {mail}"
+
+
+def _group_proposals_by_subject(
+    proposals: list[FilingProposal],
+) -> dict[str, list[FilingProposal]]:
+    result: dict[str, list[FilingProposal]] = {}
+    for proposal in proposals:
+        result.setdefault(proposal.subject, []).append(proposal)
+    return result
+
+
 def _acceptance_line(stats: FilingAcceptanceStats) -> str:
     if stats.total == 0:
-        return "No filing feedback yet; run `inboxmind review` to start the learning loop."
+        return "No filing feedback yet — run `inboxmind review` to start the learning loop."
     gate = "open" if stats.rate >= WRITE_SCOPE_GATE_RATE else "closed"
     return (
         f"Filing acceptance: {stats.rate:.0%} ({stats.accepted}/{stats.total} reviewed). "
@@ -71,25 +115,14 @@ def _acceptance_line(stats: FilingAcceptanceStats) -> str:
     )
 
 
-def _triage_line(brief: MorningBrief) -> str:
-    total_messages = sum(thread.message_count for thread in brief.threads)
-    return (
-        f"Triage: {len(brief.threads)} threads, {total_messages} messages - "
-        f"{brief.classified_now} classified now, "
-        f"{brief.previously_classified} already classified"
-    )
-
-
 def _thread_line(thread: BriefThreadSummary) -> str:
-    plural = "s" if thread.message_count != 1 else ""
     senders = ", ".join(thread.senders)
     latest = thread.latest_at.strftime("%H:%M")
-    line = (
-        f"- **{thread.subject}** - {senders} "
-        f"({thread.message_count} message{plural}, latest {latest}) [{thread.profile_id}]"
-    )
+    line = f"- **{thread.subject}** · {senders} · {latest}"
+    if thread.message_count > 1:
+        line += f" ({thread.message_count} messages)"
     if thread.boost_reason:
-        line += f" - {thread.boost_reason}"
+        line += f" — {thread.boost_reason}"
     return line
 
 
@@ -118,11 +151,3 @@ def _event_details(event: CalendarEvent) -> str:
     if event.online_meeting_url:
         details += f" - join: {event.online_meeting_url}"
     return details
-
-
-def _proposal_line(proposal: FilingProposal) -> str:
-    path = "/".join(proposal.proposed_path)
-    return (
-        f"- `{proposal.proposal_id}` [{proposal.urgency.value}] {proposal.subject} -> {path} "
-        f"- {proposal.rationale}"
-    )

@@ -53,17 +53,16 @@ def test_renders_bands_in_priority_order_and_omits_empty_bands() -> None:
 
     markdown = render_brief(make_brief(threads=threads))
 
-    assert markdown.startswith("# Morning Brief - 2026-07-04")
+    assert "# Morning Brief" in markdown
     assert markdown.index("## Critical") < markdown.index("## Low")
     assert "## High" not in markdown
     assert "## Normal" not in markdown
     assert "**Contract deadline today**" in markdown
     assert "2 messages" in markdown
-    assert "[consulting]" in markdown
-    assert "classified now" in markdown
 
 
-def test_renders_proposals_with_stable_ids() -> None:
+def test_proposals_rendered_inline_under_matching_thread() -> None:
+    thread = make_thread("t-crit", "Contract deadline today", UrgencyBand.CRITICAL)
     proposal = FilingProposal(
         proposal_id="abc123def456",
         message_id="row-0001",
@@ -74,20 +73,22 @@ def test_renders_proposals_with_stable_ids() -> None:
         rationale="No human-approved filing rule is available.",
     )
 
-    markdown = render_brief(make_brief(proposals=[proposal]))
+    markdown = render_brief(make_brief(threads=[thread], proposals=[proposal]))
 
-    assert "## Filing proposals" in markdown
     assert "`abc123def456`" in markdown
-    assert "[critical] Contract deadline today -> Review" in markdown
-    assert "inboxmind review" in markdown
+    assert "Proposal: Review" in markdown
+    assert "## Filing proposals" not in markdown  # proposals are now inline, not a separate section
+    # proposal appears after the thread line
+    assert markdown.index("**Contract deadline today**") < markdown.index("`abc123def456`")
 
 
 def test_empty_brief_renders_calm_message() -> None:
     markdown = render_brief(make_brief())
 
     assert "No new mail in this window." in markdown
-    assert "No filing proposals in this window." in markdown
+    assert "Inbox is clear." in markdown
     assert "## Critical" not in markdown
+    assert "## Filing proposals" not in markdown
 
 
 def make_event(
@@ -110,11 +111,11 @@ def make_event(
     )
 
 
-def test_agenda_renders_between_window_and_triage() -> None:
-    markdown = render_brief(make_brief(events=[make_event()]))
+def test_agenda_renders_before_mail_sections() -> None:
+    threads = [make_thread("t-low", "Newsletter", UrgencyBand.LOW)]
+    markdown = render_brief(make_brief(events=[make_event()], threads=threads))
 
-    assert markdown.index("Window:") < markdown.index("## Agenda")
-    assert markdown.index("## Agenda") < markdown.index("Triage:")
+    assert markdown.index("## Agenda") < markdown.index("## Low")
     assert "- 09:00-09:30 **Client review**" in markdown
 
 
@@ -143,11 +144,11 @@ def test_all_day_event_renders_without_times() -> None:
     assert "- All day: **Site visit**" in markdown
 
 
-def test_empty_agenda_renders_no_meetings_line() -> None:
+def test_empty_agenda_shows_no_meetings_in_opener() -> None:
     markdown = render_brief(make_brief())
 
-    assert "## Agenda" in markdown
     assert "No meetings today." in markdown
+    assert "## Agenda" not in markdown  # section hidden when there are no events
 
 
 def test_boost_reason_appends_to_thread_line() -> None:
@@ -164,8 +165,8 @@ def test_boost_reason_appends_to_thread_line() -> None:
 def test_footer_shows_no_feedback_when_empty() -> None:
     markdown = render_brief(make_brief())
 
-    assert "## Filing feedback" in markdown
     assert "No filing feedback yet" in markdown
+    assert "## Filing feedback" not in markdown  # now a plain footer line, no section header
 
 
 def test_footer_shows_acceptance_rate_and_open_gate() -> None:
@@ -180,3 +181,17 @@ def test_footer_reports_closed_gate_below_threshold() -> None:
 
     assert "Filing acceptance: 60% (6/10 reviewed)." in markdown
     assert "Write-scope gate (70%) is closed." in markdown
+
+
+def test_opener_reports_critical_urgency() -> None:
+    thread = make_thread("t-crit", "Emergency", UrgencyBand.CRITICAL)
+    markdown = render_brief(make_brief(threads=[thread]))
+
+    assert "1 critical thread needs attention." in markdown
+
+
+def test_opener_quiet_inbox_for_low_only() -> None:
+    thread = make_thread("t-low", "Newsletter", UrgencyBand.LOW)
+    markdown = render_brief(make_brief(threads=[thread]))
+
+    assert "Quiet inbox" in markdown
