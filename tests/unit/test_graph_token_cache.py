@@ -139,7 +139,11 @@ def test_token_cache_load_without_file_returns_empty_cache(tmp_path: Path) -> No
 
 
 def test_msal_request_scopes_filters_reserved_scopes() -> None:
-    assert msal_request_scopes(GRAPH_REQUIRED_SCOPES) == ["User.Read", "Mail.Read"]
+    assert msal_request_scopes(GRAPH_REQUIRED_SCOPES) == [
+        "User.Read",
+        "Mail.Read",
+        "Calendars.Read",
+    ]
 
 
 def test_device_flow_success(tmp_path: Path, graph_settings: MicrosoftGraphOAuthSettings) -> None:
@@ -160,7 +164,7 @@ def test_device_flow_success(tmp_path: Path, graph_settings: MicrosoftGraphOAuth
     assert result.scopes == ("User.Read", "Mail.Read")
     assert result.from_cache is False
     assert prompts[0].user_code == "ABC123"
-    assert fake.device_scopes == ["User.Read", "Mail.Read"]
+    assert fake.device_scopes == ["User.Read", "Mail.Read", "Calendars.Read"]
     assert SUCCESS_RESULT["access_token"] not in repr(result)
     assert store.path.exists()
     assert b"synthetic" not in store.path.read_bytes()
@@ -178,7 +182,7 @@ def test_silent_token_served_from_cache(
     result = authenticator.acquire_token(lambda prompt: None)
 
     assert result.from_cache is True
-    assert fake.silent_scopes == ["User.Read", "Mail.Read"]
+    assert fake.silent_scopes == ["User.Read", "Mail.Read", "Calendars.Read"]
     assert fake.device_scopes is None
 
 
@@ -194,7 +198,7 @@ def test_silent_miss_falls_back_to_device_flow(
     result = authenticator.acquire_token(lambda prompt: None)
 
     assert result.from_cache is False
-    assert fake.device_scopes == ["User.Read", "Mail.Read"]
+    assert fake.device_scopes == ["User.Read", "Mail.Read", "Calendars.Read"]
 
 
 def test_device_flow_initiation_failure_raises(

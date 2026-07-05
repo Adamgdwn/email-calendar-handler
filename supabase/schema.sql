@@ -94,6 +94,24 @@ create table if not exists emails (
   unique (account_id, body_hash)
 );
 
+create table if not exists calendar_events (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references accounts(id) on delete cascade,
+  provider_event_id text not null,
+  subject text not null default '',
+  start_at timestamptz not null,
+  end_at timestamptz not null,
+  is_all_day boolean not null default false,
+  organizer_name text,
+  organizer_email text,
+  attendees jsonb not null default '[]'::jsonb,
+  location text,
+  online_meeting_url text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (account_id, provider_event_id)
+);
+
 create table if not exists contacts (
   id uuid primary key default gen_random_uuid(),
   account_id uuid not null references accounts(id) on delete cascade,
@@ -161,6 +179,8 @@ create index if not exists idx_account_sync_checkpoints_account_provider
   on account_sync_checkpoints(account_id, provider);
 create index if not exists idx_emails_account_timestamp on emails(account_id, message_timestamp desc);
 create index if not exists idx_emails_classification on emails using gin (classification);
+create index if not exists idx_calendar_events_account_start
+  on calendar_events(account_id, start_at);
 create index if not exists idx_contacts_account_influence on contacts(account_id, influence_score desc);
 create index if not exists idx_filing_rules_account_status on filing_rules(account_id, status);
 create index if not exists idx_feedback_account_created on feedback(account_id, created_at desc);
@@ -171,6 +191,7 @@ alter table account_consents enable row level security;
 alter table account_sync_checkpoints enable row level security;
 alter table threads enable row level security;
 alter table emails enable row level security;
+alter table calendar_events enable row level security;
 alter table contacts enable row level security;
 alter table contact_edges enable row level security;
 alter table filing_rules enable row level security;
@@ -185,6 +206,8 @@ create policy "service_role_all_account_sync_checkpoints"
   on account_sync_checkpoints for all using (auth.role() = 'service_role');
 create policy "service_role_all_threads" on threads for all using (auth.role() = 'service_role');
 create policy "service_role_all_emails" on emails for all using (auth.role() = 'service_role');
+create policy "service_role_all_calendar_events"
+  on calendar_events for all using (auth.role() = 'service_role');
 create policy "service_role_all_contacts" on contacts for all using (auth.role() = 'service_role');
 create policy "service_role_all_contact_edges" on contact_edges for all using (auth.role() = 'service_role');
 create policy "service_role_all_filing_rules" on filing_rules for all using (auth.role() = 'service_role');

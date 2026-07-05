@@ -7,7 +7,7 @@ never reach agents, matching the `ClassificationInput` excerpt contract.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from hashlib import sha256
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -17,21 +17,25 @@ from pydantic import ValidationError
 
 from src.agents.supervisor import EmailSupervisor
 from src.memory.account_store import ACCOUNTS_TABLE, link_account_persona, persona_profile_id
+from src.memory.calendar_store import load_events
 from src.memory.email_store import EMAILS_TABLE
 from src.memory.rule_store import SupabaseRuleStore
-from src.memory.supabase_client import TableGateway
+from src.memory.supabase_client import SupabaseStoreError, TableGateway
 from src.models.brief_models import URGENCY_ORDER, BriefThreadSummary, FilingProposal, MorningBrief
+from src.models.calendar_models import CalendarEvent
 from src.models.email_models import (
     AccountContext,
     Classification,
     ClassificationInput,
     EmailAddress,
     Provider,
+    UrgencyBand,
 )
 from src.models.filing_models import FilingRule
 from src.models.persona_models import PersonaProfile
 from src.utils.encryption import FieldEncryptor
 
+AGENDA_LOOKBACK_DAYS = 7  # how far back a still-running multi-day event can start
 DEFAULT_LOOKBACK_HOURS = 24
 EXCERPT_CHARS = 500
 ACCOUNT_COLUMNS = "id,persona_id,provider,primary_email,display_name,org_type,timezone"
@@ -88,7 +92,10 @@ def run_brief(
         classified_now += 1
     rules = SupabaseRuleStore(gateway).list_rules(account_id)
     proposals = _build_proposals(supervisor, account_id, rows, classified, rules)
-    threads = _build_threads(rows, classified, persona.profile_id, account_zone)
+    events, attendee_emails = _agenda(
+        gateway, account_id, moment, account_zone, str(account.get("primary_email"))
+    )
+    threads = _build_threads(rows, classified, persona.profile_id, account_zone, attendee_emails)
     return MorningBrief(
         brief_date=moment.astimezone(account_zone).date(),
         account_email=str(account.get("primary_email")),
@@ -96,6 +103,7 @@ def run_brief(
         persona_display_name=persona.display_name,
         lookback_hours=lookback_hours,
         generated_at=moment.astimezone(account_zone),
+        events=events,
         threads=threads,
         proposals=proposals,
         classified_now=classified_now,
@@ -253,6 +261,7 @@ def _build_threads(
     classified: dict[str, Classification],
     profile_id: str,
     account_zone: ZoneInfo,
+    attendee_emails: set[str],
 ) -> list[BriefThreadSummary]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -261,10 +270,11 @@ def _build_threads(
     for thread_id, members in grouped.items():
         members.sort(key=_timestamp)
         latest = members[-1]
-        urgency = min(
+        base_urgency = min(
             (classified[str(member["id"])].urgency for member in members),
             key=lambda band: URGENCY_ORDER[band],
         )
+        urgency, boost_reason = _boosted_urgency(base_urgency, members, attendee_emails)
         senders: list[str] = []
         for member in members:
             sender = str(member.get("sender_email"))
@@ -279,10 +289,76 @@ def _build_threads(
                 urgency=urgency,
                 message_count=len(members),
                 latest_at=_timestamp(latest).astimezone(account_zone),
+                boost_reason=boost_reason,
             )
         )
     threads.sort(key=lambda thread: (URGENCY_ORDER[thread.urgency], -thread.latest_at.timestamp()))
     return threads
+
+
+_BAND_BY_RANK = {rank: band for band, rank in URGENCY_ORDER.items()}
+
+
+def _boosted_urgency(
+    base: UrgencyBand,
+    members: list[dict[str, Any]],
+    attendee_emails: set[str],
+) -> tuple[UrgencyBand, str | None]:
+    """Meeting-aware boost is a display-time overlay; stored classifications
+    are never rewritten, so re-runs stay deterministic."""
+    if URGENCY_ORDER[base] == 0:
+        return base, None
+    for member in members:
+        sender = str(member.get("sender_email")).lower()
+        if sender in attendee_emails:
+            boosted = _BAND_BY_RANK[URGENCY_ORDER[base] - 1]
+            return boosted, f"boosted from {base.value}: meeting today with {sender}"
+    return base, None
+
+
+def _agenda(
+    gateway: TableGateway,
+    account_id: str,
+    moment: datetime,
+    zone: ZoneInfo,
+    owner_email: str,
+) -> tuple[list[CalendarEvent], set[str]]:
+    """Today's agenda (account-zone display copies) and the boost attendee set.
+
+    An event is on today's agenda when its [start, end) range overlaps today's
+    local day. Overlap - not starts-today - so all-day invites created in
+    other time zones and cross-midnight meetings still surface; the trade-off
+    is a foreign-timezone all-day event may also appear on a neighboring day.
+    """
+    day_start = datetime.combine(moment.astimezone(zone).date(), time.min, tzinfo=zone)
+    day_end = day_start + timedelta(days=1)
+    day_start_utc = day_start.astimezone(UTC)
+    day_end_utc = day_end.astimezone(UTC)
+    try:
+        stored = load_events(
+            gateway,
+            account_id=account_id,
+            start=day_start_utc - timedelta(days=AGENDA_LOOKBACK_DAYS),
+            end=day_end_utc,
+        )
+    except SupabaseStoreError as exc:
+        msg = f"Stored calendar events are unreadable: {exc}"
+        raise BriefDataError(msg) from exc
+    todays = [event for event in stored if event.start < day_end_utc and event.end > day_start_utc]
+    owner = owner_email.lower()
+    attendee_emails = {email for event in todays for email in event.participant_emails()} - {owner}
+    display = [_display_event(event, zone, owner) for event in todays]
+    return display, attendee_emails
+
+
+def _display_event(event: CalendarEvent, zone: ZoneInfo, owner_email: str) -> CalendarEvent:
+    return event.model_copy(
+        update={
+            "start": event.start.astimezone(zone),
+            "end": event.end.astimezone(zone),
+            "attendees": [a for a in event.attendees if a.email != owner_email],
+        }
+    )
 
 
 def _timestamp(row: dict[str, Any]) -> datetime:

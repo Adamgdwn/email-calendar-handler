@@ -6,7 +6,7 @@ from pydantic import AnyUrl, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 GRAPH_LOGIN_BASE_URL = "https://login.microsoftonline.com"
-GRAPH_REQUIRED_SCOPES = ("offline_access", "User.Read", "Mail.Read")
+GRAPH_REQUIRED_SCOPES = ("offline_access", "User.Read", "Mail.Read", "Calendars.Read")
 FORBIDDEN_GRAPH_SCOPE_FRAGMENTS = ("Mail.Send", "Mail.ReadWrite", ".Send", ".ReadWrite")
 
 

@@ -1,6 +1,7 @@
 """InboxMind command-line interface.
 
-Chunk 9 surface: `inboxmind connect`, `inboxmind sync`, and `inboxmind brief`.
+Chunk 10 surface: `inboxmind connect`, `inboxmind sync` (mail plus a
+read-only calendar window), and `inboxmind brief` (agenda-first triage).
 Later chunks add review and draft. Every command is read-only against the
 mailbox; connect requires an explicit human yes before any sign-in.
 """
@@ -27,6 +28,7 @@ from src.brief_service import (
     run_brief,
 )
 from src.ingestion.graph_auth import MicrosoftGraphOAuthSettings
+from src.ingestion.graph_calendar import GraphCalendarError
 from src.ingestion.graph_token_cache import (
     ClientFactory,
     DeviceCodePrompt,
@@ -40,7 +42,7 @@ from src.memory.supabase_client import SupabaseSettings, TableGateway, build_tab
 from src.models.auth_models import OAuthConsentRecord
 from src.models.email_models import Provider
 from src.personas.loader import PersonaLoadError, load_personas
-from src.sync_service import SyncReport, run_sync
+from src.sync_service import DEFAULT_CALENDAR_DAYS, SyncReport, run_sync
 from src.utils.encryption import FieldEncryptor
 
 TOKEN_CACHE_FILENAME = "graph_token_cache.enc"  # noqa: S105 - filename, not a secret
@@ -80,7 +82,9 @@ def main(
     if args.command == "connect":
         return _run_connect(client_factory)
     if args.command == "sync":
-        return _run_sync(client_factory, gateway_factory, transport_factory)
+        return _run_sync(
+            client_factory, gateway_factory, transport_factory, calendar_days=args.calendar_days
+        )
     if args.command == "brief":
         return _run_brief(gateway_factory, profile=args.profile, hours=args.hours)
     parser.error(f"unknown command: {args.command}")
@@ -96,9 +100,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "connect",
         help="Sign in to Microsoft Graph with read-only scopes via device-code flow.",
     )
-    subparsers.add_parser(
+    sync_parser = subparsers.add_parser(
         "sync",
-        help="Pull mailbox changes through delta sync into encrypted Supabase storage.",
+        help="Pull mailbox changes and a calendar window into encrypted Supabase storage.",
+    )
+    sync_parser.add_argument(
+        "--calendar-days",
+        type=int,
+        default=DEFAULT_CALENDAR_DAYS,
+        help=f"Fetch events for today +/- N days (default {DEFAULT_CALENDAR_DAYS}, minimum 1).",
     )
     brief_parser = subparsers.add_parser(
         "brief",
@@ -169,7 +179,12 @@ def _run_sync(
     client_factory: ClientFactory,
     gateway_factory: GatewayFactory,
     transport_factory: TransportFactory,
+    *,
+    calendar_days: int,
 ) -> int:
+    if calendar_days < 1:
+        print("Configuration error: --calendar-days must be at least 1.")
+        return EXIT_CONFIG_ERROR
     app_settings = _load_settings(AppSettings, env_prefix="")
     if app_settings is None:
         return EXIT_CONFIG_ERROR
@@ -200,12 +215,17 @@ def _run_sync(
             gateway=gateway,
             encryptor=encryptor,
             consent_records=consent_records,
+            calendar_days=calendar_days,
         )
     except GraphAuthError as exc:
         print(f"Sync failed: {exc}")
         return EXIT_FAILURE
     except GraphTransportError as exc:
         print(f"Sync failed after retries: {exc}")
+        return EXIT_FAILURE
+    except GraphCalendarError as exc:
+        print(f"Calendar sync failed: {exc}")
+        print("Mail progress was already checkpointed; re-run `inboxmind sync` once fixed.")
         return EXIT_FAILURE
     except APIError as exc:
         print(f"Sync failed writing to Supabase: {exc.message}")
@@ -288,6 +308,10 @@ def _print_sync_report(report: SyncReport) -> None:
         f"  {report.fetched} fetched, {report.inserted} stored encrypted, "
         f"{report.skipped_duplicates} duplicates skipped, "
         f"{report.deleted_upstream} deleted upstream."
+    )
+    print(
+        f"  Calendar: {report.calendar_events_stored} events stored "
+        f"for today +/- {report.calendar_days} day(s)."
     )
     print(f"  Consents uploaded: {report.consents_uploaded}. Delta checkpoint saved.")
 

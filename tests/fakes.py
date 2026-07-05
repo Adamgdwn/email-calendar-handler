@@ -6,11 +6,13 @@ Everything here is synthetic; no real mailbox data, ever.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import SecretStr
 
+from src.ingestion.graph_calendar import build_calendar_view_url, calendar_window_utc
 from src.ingestion.graph_token_cache import GraphTokenResult
 from src.models.auth_models import OAuthConsentRecord
 from src.models.email_models import Provider
@@ -37,9 +39,10 @@ class FakeTableGateway:
         eq: dict[str, str],
         in_filter: tuple[str, list[str]] | None = None,
         gte: tuple[str, str] | None = None,
+        lt: tuple[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         del columns  # the fake returns full rows; callers read only what they selected
-        return [dict(row) for row in self.rows(table) if _matches(row, eq, in_filter, gte)]
+        return [dict(row) for row in self.rows(table) if _matches(row, eq, in_filter, gte, lt)]
 
     def insert_rows(self, table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         stored: list[dict[str, Any]] = []
@@ -78,10 +81,29 @@ class FakeTableGateway:
     ) -> list[dict[str, Any]]:
         updated: list[dict[str, Any]] = []
         for row in self.rows(table):
-            if _matches(row, eq, None, None):
+            if _matches(row, eq, None, None, None):
                 row.update(values)
                 updated.append(dict(row))
         return updated
+
+    def delete_rows(
+        self,
+        table: str,
+        *,
+        eq: dict[str, str],
+        in_filter: tuple[str, list[str]] | None = None,
+        gte: tuple[str, str] | None = None,
+        lt: tuple[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        kept: list[dict[str, Any]] = []
+        removed: list[dict[str, Any]] = []
+        for row in self.rows(table):
+            if _matches(row, eq, in_filter, gte, lt):
+                removed.append(dict(row))
+            else:
+                kept.append(row)
+        self.tables[table] = kept
+        return removed
 
 
 def _matches(
@@ -89,6 +111,7 @@ def _matches(
     eq: dict[str, str],
     in_filter: tuple[str, list[str]] | None,
     gte: tuple[str, str] | None,
+    lt: tuple[str, str] | None,
 ) -> bool:
     if any(row.get(column) != value for column, value in eq.items()):
         return False
@@ -98,17 +121,22 @@ def _matches(
             return False
     if gte is not None:
         column, bound = gte
-        return _meets_lower_bound(row.get(column), bound)
+        if not _compare_bound(row.get(column), bound, lambda a, b: a >= b):
+            return False
+    if lt is not None:
+        column, bound = lt
+        if not _compare_bound(row.get(column), bound, lambda a, b: a < b):
+            return False
     return True
 
 
-def _meets_lower_bound(value: Any, bound: str) -> bool:
+def _compare_bound(value: Any, bound: str, ordering: Callable[[Any, Any], bool]) -> bool:
     # Timestamps arrive in mixed ISO renderings ("Z" vs "+00:00"), so compare
     # parsed datetimes and fall back to string ordering for non-timestamp columns.
     try:
-        return datetime.fromisoformat(str(value)) >= datetime.fromisoformat(bound)
+        return bool(ordering(datetime.fromisoformat(str(value)), datetime.fromisoformat(bound)))
     except ValueError:
-        return str(value) >= bound
+        return bool(ordering(str(value), bound))
 
 
 class ScriptedGraphTransport:
@@ -158,6 +186,57 @@ def removed_message(message_id: str) -> dict[str, Any]:
     return {"id": message_id, "@removed": {"reason": "deleted"}}
 
 
+def todays_event_time(hour: int, minute: int = 0) -> str:
+    """A Graph-style dateTime (7-digit fraction) on real today, UTC.
+
+    Sync tests must use real-today instants so replace-window pruning stays
+    exercised on every run date instead of only around 2026-07-04.
+    """
+    moment = datetime.now(tz=UTC).replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return moment.strftime("%Y-%m-%dT%H:%M:%S.0000000")
+
+
+def graph_event(
+    event_id: str,
+    *,
+    subject: str = "Synthetic meeting",
+    start: str | None = None,
+    end: str | None = None,
+    organizer: str = "organizer@clientfirm.example",
+    attendees: tuple[str, ...] = ("owner@example.com",),
+    is_all_day: bool = False,
+    location: str | None = None,
+    join_url: str | None = None,
+    body: str = "Synthetic agenda note",
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "id": event_id,
+        "subject": subject,
+        "start": {"dateTime": start or todays_event_time(16), "timeZone": "UTC"},
+        "end": {"dateTime": end or todays_event_time(16, 30), "timeZone": "UTC"},
+        "isAllDay": is_all_day,
+        "organizer": {"emailAddress": {"name": "Synthetic Organizer", "address": organizer}},
+        "attendees": [{"emailAddress": {"address": address}} for address in attendees],
+        "bodyPreview": body,
+        "isCancelled": False,
+    }
+    if location is not None:
+        payload["location"] = {"displayName": location}
+    if join_url is not None:
+        payload["onlineMeeting"] = {"joinUrl": join_url}
+    return payload
+
+
+def todays_calendar_url(days: int = 1) -> str:
+    """The exact calendarView URL `run_sync` requests today; scripts key on it."""
+    start, end = calendar_window_utc(datetime.now(tz=UTC).date(), days)
+    return build_calendar_view_url(start, end)
+
+
+def empty_calendar_script(days: int = 1) -> dict[str, dict[str, Any]]:
+    return {todays_calendar_url(days): {"value": []}}
+
+
 def make_token(subject: str = "owner@example.com") -> GraphTokenResult:
     return GraphTokenResult(
         access_token=SecretStr("synthetic-access-token"),
@@ -165,7 +244,7 @@ def make_token(subject: str = "owner@example.com") -> GraphTokenResult:
         account_id=SYNTHETIC_ACCOUNT_ID,
         tenant_id=SYNTHETIC_TENANT_ID,
         account_type="organizational",
-        scopes=("User.Read", "Mail.Read"),
+        scopes=("User.Read", "Mail.Read", "Calendars.Read"),
         from_cache=True,
     )
 

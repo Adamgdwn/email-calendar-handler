@@ -177,6 +177,13 @@ Done criteria:
 
 ### Chunk 10: Calendar Read — Agenda In The Brief
 
+Status: delivered 2026-07-04 (PR #21). Built from
+`docs/2026-07-04 - Chunk 10 completion plan.md`. Real-run verification
+remains a manual step for Adam: add the `Calendars.Read` API permission to
+the app registration, apply the `calendar_events` block of
+`supabase/schema.sql`, re-run `inboxmind connect` once, then
+`inboxmind sync` and `inboxmind brief`; steps are in `docs/manual.md`.
+
 Goal: the calendar half of the product, read-only.
 
 Read:
@@ -276,10 +283,11 @@ risk register entries, and a scope-guard change that keeps per-action
 Say:
 
 ```text
-Carry on with chunk 10.
+Carry on with chunk 11.
 ```
 
-That delivers the calendar half of the product, read-only: `Calendars.Read`
-joins the scope set, `inboxmind sync` fetches today's events, the brief opens
-with the agenda, and mail from today's attendees is boosted one urgency band
-with the reason recorded.
+That closes the feedback loop: `inboxmind review` records
+accept/modify/reject decisions as feedback records, LearningAgent earns rule
+promotions after three consecutive accepts (and stays the only
+`filing_rules` writer), and the proposal acceptance rate that drives the
+write-scope gate appears in the brief footer.

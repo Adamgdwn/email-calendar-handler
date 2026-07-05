@@ -6,6 +6,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from src.models.calendar_models import CalendarEvent
 from src.models.email_models import UrgencyBand
 
 URGENCY_ORDER: dict[UrgencyBand, int] = {
@@ -24,6 +25,7 @@ class BriefThreadSummary(BaseModel):
     urgency: UrgencyBand
     message_count: int = Field(ge=1)
     latest_at: datetime
+    boost_reason: str | None = None
 
     @field_validator("latest_at")
     @classmethod
@@ -51,6 +53,7 @@ class MorningBrief(BaseModel):
     persona_display_name: str
     lookback_hours: int = Field(ge=1)
     generated_at: datetime
+    events: list[CalendarEvent] = Field(default_factory=list)
     threads: list[BriefThreadSummary] = Field(default_factory=list)
     proposals: list[FilingProposal] = Field(default_factory=list)
     classified_now: int = Field(ge=0)

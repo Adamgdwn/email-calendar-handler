@@ -2,12 +2,14 @@ from datetime import UTC, date, datetime
 
 from src.brief.renderer import render_brief
 from src.models.brief_models import BriefThreadSummary, FilingProposal, MorningBrief
+from src.models.calendar_models import CalendarEvent, EventAttendee
 from src.models.email_models import UrgencyBand
 
 
 def make_brief(
     threads: list[BriefThreadSummary] | None = None,
     proposals: list[FilingProposal] | None = None,
+    events: list[CalendarEvent] | None = None,
 ) -> MorningBrief:
     return MorningBrief(
         brief_date=date(2026, 7, 4),
@@ -16,6 +18,7 @@ def make_brief(
         persona_display_name="Consulting",
         lookback_hours=24,
         generated_at=datetime(2026, 7, 4, 6, 30, tzinfo=UTC),
+        events=events or [],
         threads=threads or [],
         proposals=proposals or [],
         classified_now=len(threads or []),
@@ -78,3 +81,74 @@ def test_empty_brief_renders_calm_message() -> None:
     assert "No new mail in this window." in markdown
     assert "No filing proposals in this window." in markdown
     assert "## Critical" not in markdown
+
+
+def make_event(
+    subject: str = "Client review",
+    *,
+    is_all_day: bool = False,
+    attendees: list[EventAttendee] | None = None,
+    location: str | None = None,
+    online_meeting_url: str | None = None,
+) -> CalendarEvent:
+    return CalendarEvent(
+        provider_event_id="evt-0001",
+        subject=subject,
+        start=datetime(2026, 7, 4, 9, 0, tzinfo=UTC),
+        end=datetime(2026, 7, 4, 9, 30, tzinfo=UTC),
+        is_all_day=is_all_day,
+        attendees=attendees or [],
+        location=location,
+        online_meeting_url=online_meeting_url,
+    )
+
+
+def test_agenda_renders_between_window_and_triage() -> None:
+    markdown = render_brief(make_brief(events=[make_event()]))
+
+    assert markdown.index("Window:") < markdown.index("## Agenda")
+    assert markdown.index("## Agenda") < markdown.index("Triage:")
+    assert "- 09:00-09:30 **Client review**" in markdown
+
+
+def test_agenda_event_line_lists_people_location_and_join_link() -> None:
+    attendees = [EventAttendee(email=f"person{i}@example.com") for i in range(6)]
+    attendees[0] = EventAttendee(name="Casey Lee", email="casey@example.com")
+    event = make_event(
+        attendees=attendees,
+        location="Plant 4",
+        online_meeting_url="https://teams.example/join/1",
+    )
+
+    markdown = render_brief(make_brief(events=[event]))
+
+    expected = (
+        "with Casey Lee, person1@example.com, person2@example.com, person3@example.com +2 more"
+    )
+    assert expected in markdown
+    assert "(Plant 4)" in markdown
+    assert "join: https://teams.example/join/1" in markdown
+
+
+def test_all_day_event_renders_without_times() -> None:
+    markdown = render_brief(make_brief(events=[make_event("Site visit", is_all_day=True)]))
+
+    assert "- All day: **Site visit**" in markdown
+
+
+def test_empty_agenda_renders_no_meetings_line() -> None:
+    markdown = render_brief(make_brief())
+
+    assert "## Agenda" in markdown
+    assert "No meetings today." in markdown
+
+
+def test_boost_reason_appends_to_thread_line() -> None:
+    thread = make_thread("t-boost", "Newsletter planning", UrgencyBand.NORMAL)
+    boosted = thread.model_copy(
+        update={"boost_reason": "boosted from low: meeting today with news@example.com"}
+    )
+
+    markdown = render_brief(make_brief(threads=[boosted]))
+
+    assert "boosted from low: meeting today with news@example.com" in markdown

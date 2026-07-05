@@ -6,7 +6,10 @@ Pure formatting only: no I/O, no persistence, no classification decisions.
 from __future__ import annotations
 
 from src.models.brief_models import URGENCY_ORDER, BriefThreadSummary, FilingProposal, MorningBrief
+from src.models.calendar_models import CalendarEvent
 from src.models.email_models import UrgencyBand
+
+_ATTENDEE_DISPLAY_CAP = 4
 
 _BAND_TITLES: dict[UrgencyBand, str] = {
     UrgencyBand.CRITICAL: "Critical",
@@ -25,6 +28,12 @@ def render_brief(brief: MorningBrief) -> str:
         f"Window: last {brief.lookback_hours} hours, generated "
         f"{brief.generated_at.strftime('%Y-%m-%d %H:%M %Z')}"
     )
+    lines.extend(["", "## Agenda", ""])
+    if brief.events:
+        lines.extend(_event_line(event) for event in brief.events)
+    else:
+        lines.append("No meetings today.")
+    lines.append("")
     lines.append(_triage_line(brief))
     for band in URGENCY_ORDER:
         section = [thread for thread in brief.threads if thread.urgency == band]
@@ -57,10 +66,40 @@ def _thread_line(thread: BriefThreadSummary) -> str:
     plural = "s" if thread.message_count != 1 else ""
     senders = ", ".join(thread.senders)
     latest = thread.latest_at.strftime("%H:%M")
-    return (
+    line = (
         f"- **{thread.subject}** - {senders} "
         f"({thread.message_count} message{plural}, latest {latest}) [{thread.profile_id}]"
     )
+    if thread.boost_reason:
+        line += f" - {thread.boost_reason}"
+    return line
+
+
+def _event_line(event: CalendarEvent) -> str:
+    if event.is_all_day:
+        window = "All day:"
+    else:
+        window = f"{event.start.strftime('%H:%M')}-{event.end.strftime('%H:%M')}"
+    subject = event.subject or "(no subject)"
+    return f"- {window} **{subject}**{_event_details(event)}"
+
+
+def _event_details(event: CalendarEvent) -> str:
+    details = ""
+    if event.attendees:
+        shown = [attendee.name or attendee.email for attendee in event.attendees]
+        overflow = len(shown) - _ATTENDEE_DISPLAY_CAP
+        if overflow > 0:
+            shown = shown[:_ATTENDEE_DISPLAY_CAP]
+        people = ", ".join(shown)
+        if overflow > 0:
+            people += f" +{overflow} more"
+        details += f" - with {people}"
+    if event.location:
+        details += f" ({event.location})"
+    if event.online_meeting_url:
+        details += f" - join: {event.online_meeting_url}"
+    return details
 
 
 def _proposal_line(proposal: FilingProposal) -> str:

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.0 - 2026-07-04
+
+- Chunk 10 (Calendar Read): `inboxmind sync` now also fetches a read-only
+  Microsoft Graph `calendarView` window (`Calendars.Read`; today +/- 1 day,
+  `--calendar-days N` to widen) after the mail checkpoint is saved, and the
+  Morning Brief opens with today's agenda before email triage.
+- Provider-neutral `CalendarEvent`/`EventAttendee` models: timezone-aware
+  start/end, organizer, deduped lowercased attendees, location,
+  online-meeting URL, and a 500-character body excerpt matching the email
+  discipline — event bodies are never persisted at all.
+- New `calendar_events` table (index, RLS, service-role policy) with
+  replace-window semantics: each sync deletes the fetched window plus any
+  rows for refetched event ids, then inserts fresh, so cancelled and moved
+  meetings never linger; duplicate provider ids collapse last-wins.
+- Meeting-aware triage: mail from anyone on today's attendee list is boosted
+  one urgency band for display (capped at critical) with the reason recorded
+  on the thread line; stored classifications are never rewritten. Today is
+  the account-timezone day, and events qualify by overlap so cross-midnight
+  and foreign-timezone all-day meetings still surface.
+- `Calendars.Read` joined the enforced scope set (`Calendars.ReadWrite`
+  stays rejected by the `.ReadWrite` fragment guard, now covered by tests);
+  `TableGateway` gained `lt` filtering and `delete_rows`.
+- 36 new tests (155 total). Zero new dependencies.
+
 ## 0.4.0 - 2026-07-04
 
 - Chunk 9 (Morning Brief v1): `inboxmind brief` renders the first daily-value
