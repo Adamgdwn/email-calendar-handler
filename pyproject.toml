@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "inboxmind"
-version = "0.2.0"
+version = "0.3.0"
 description = "Human-approved email intelligence pipeline scaffold for a single-account InboxMind MVP."
 readme = "README.md"
 requires-python = "==3.12.*"
@@ -55,6 +55,9 @@ strict = true
 warn_unused_configs = true
 plugins = ["pydantic.mypy"]
 files = ["src", "tests"]
+# tests/ has no __init__.py; anchor module names at the repo root so
+# tests/fakes.py is always `tests.fakes`, matching how test modules import it.
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 # msal ships no py.typed; typed access goes through the DeviceFlowClient and

@@ -132,6 +132,16 @@ class GraphAuthenticator:
         self._cache_store.save(cache)
         return self._to_token_result(result, from_cache=from_cache)
 
+    def acquire_cached_token(self) -> GraphTokenResult | None:
+        """Silent-only acquisition for non-interactive commands; None means sign in first."""
+        cache = self._cache_store.load()
+        client = self._client_factory(self._settings, cache)
+        result = self._acquire_silent(client, msal_request_scopes(self._settings.scopes))
+        if result is None:
+            return None
+        self._cache_store.save(cache)
+        return self._to_token_result(result, from_cache=True)
+
     def _acquire_silent(self, client: DeviceFlowClient, scopes: list[str]) -> dict[str, Any] | None:
         accounts = client.get_accounts()
         if not accounts:

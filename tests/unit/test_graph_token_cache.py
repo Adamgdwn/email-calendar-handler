@@ -251,3 +251,30 @@ def test_missing_claims_fall_back_to_requested_scopes(
     assert result.tenant_id is None
     assert result.account_type is None
     assert result.scopes == GRAPH_REQUIRED_SCOPES
+
+
+def test_acquire_cached_token_serves_silent_result_without_device_flow(
+    tmp_path: Path, graph_settings: MicrosoftGraphOAuthSettings
+) -> None:
+    fake = FakeDeviceFlowClient(
+        accounts=[{"home_account_id": "synthetic-home-account"}],
+        silent_result=dict(SUCCESS_RESULT),
+    )
+    authenticator = make_authenticator(graph_settings, make_store(tmp_path), fake)
+
+    result = authenticator.acquire_cached_token()
+
+    assert result is not None
+    assert result.from_cache is True
+    assert result.subject == "adam@example.com"
+    assert fake.device_scopes is None
+
+
+def test_acquire_cached_token_returns_none_when_nothing_cached(
+    tmp_path: Path, graph_settings: MicrosoftGraphOAuthSettings
+) -> None:
+    fake = FakeDeviceFlowClient()
+    authenticator = make_authenticator(graph_settings, make_store(tmp_path), fake)
+
+    assert authenticator.acquire_cached_token() is None
+    assert fake.device_scopes is None

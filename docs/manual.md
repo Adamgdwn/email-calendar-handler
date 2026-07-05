@@ -52,3 +52,28 @@ a device code to enter at microsoft.com/devicelogin. On success it appends an
 `$INBOXMIND_HOME/consent_log.jsonl`. Tokens are cached only as Fernet
 ciphertext at `$INBOXMIND_HOME/graph_token_cache.enc`; re-running `connect`
 reuses the cache silently instead of prompting again.
+
+## Sync (Chunk 8)
+
+One-time prerequisite: create a Supabase project, run `supabase/schema.sql`
+in its SQL editor, and set in `.env`:
+
+- `SUPABASE_URL` (the project URL)
+- `SUPABASE_SERVICE_ROLE_KEY` (service role key; local server-side use only)
+
+Then:
+
+```bash
+uv run inboxmind sync
+```
+
+Sync reuses the encrypted token cache (run `inboxmind connect` first — it
+never starts a device flow itself), uploads any local consent records to
+`account_consents` once, and pulls inbox changes through Microsoft Graph
+delta sync. The first run is a full sync; later runs are incremental from the
+delta link stored in `account_sync_checkpoints`, and stale delta state
+triggers an automatic full resync. Email bodies land as Fernet ciphertext
+only, and duplicate provider message IDs or account-scoped body hashes are
+skipped before insert. The first sync also bootstraps the `personas` ->
+`accounts` row chain with a `default` persona placeholder until chunk 9 loads
+real personas from YAML.

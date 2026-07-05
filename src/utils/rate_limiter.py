@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from tenacity import Retrying, retry, stop_after_attempt, wait_exponential
+from tenacity import Retrying, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from tenacity.wait import wait_base
 
 
@@ -19,10 +19,12 @@ def retry_provider_call[T](
     *,
     attempts: int = 5,
     wait_strategy: wait_base | None = None,
+    retry_exception_types: tuple[type[BaseException], ...] | None = None,
 ) -> T:
     retryer = Retrying(
         stop=stop_after_attempt(attempts),
         wait=wait_strategy or wait_exponential(multiplier=1, min=1, max=30),
+        retry=retry_if_exception_type(retry_exception_types or (Exception,)),
         reraise=True,
     )
     return retryer(func)
