@@ -9,6 +9,21 @@ This milestone is developer-facing.
 3. Copy `.env.example` to `.env` for local experiments.
 4. Do not add real email credentials until governance preflight is configured.
 
+## Desktop Launcher
+
+To open InboxMind like an app instead of typing CLI commands, install the
+desktop launcher (Linux / freedesktop, e.g. GNOME/COSMIC):
+
+```bash
+bash scripts/install-launcher.sh          # install / refresh
+bash scripts/install-launcher.sh --uninstall
+```
+
+This adds an "InboxMind" entry (custom icon) to your application menu that
+opens a small connect / sync / brief / review menu. The menu wrapper
+(`scripts/inboxmind-app.sh`, also runnable directly) forces InboxMind's own
+`.env` Supabase project to win over any ambient `SUPABASE_*` shell variables.
+
 ## Human Approval
 
 InboxMind must present filing and response actions for review. The current
