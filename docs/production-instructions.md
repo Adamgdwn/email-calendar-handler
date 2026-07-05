@@ -114,6 +114,10 @@ Notes:
 
 ### Chunk 8: First Light — End-To-End Sync And `inboxmind sync`
 
+Status: delivered 2026-07-04 (PR #19). Real-mailbox verification (two
+consecutive syncs against an applied `supabase/schema.sql`) remains a manual
+step for Adam; setup is in `docs/manual.md`.
+
 Goal: real mailbox content flows through delta sync, dedupe, encryption, and
 Supabase persistence.
 
@@ -267,9 +271,9 @@ risk register entries, and a scope-guard change that keeps per-action
 Say:
 
 ```text
-Carry on with chunk 8.
+Carry on with chunk 9.
 ```
 
-That delivers first light: real mailbox content flowing through delta sync,
-dedupe, and encryption into Supabase via `inboxmind sync`, using the
-`GraphAuthenticator` and `HttpxGraphTransport` shipped in chunk 7.
+That delivers the Morning Brief v1: persona urgency keywords loaded from
+YAML, deterministic classification over the mail `inboxmind sync` now stores,
+and a rendered `brief-YYYY-MM-DD.md` — the first daily-value artifact.

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 - 2026-07-04
+
+- Chunk 8 (First Light): `inboxmind sync` pulls real mailbox content through
+  Graph delta sync, dedupe, and encryption into Supabase.
+- First sync is full; later syncs are incremental from the delta link stored
+  in `account_sync_checkpoints`. Stale delta state clears the checkpoint and
+  resyncs explicitly — `retry_provider_call` gained `retry_exception_types`
+  so the stale-state signal is never burned as a transport retry.
+- Sync bootstraps the `personas` -> `accounts` row chain (placeholder
+  `default` persona until chunk 9), uploads local consent records to
+  `account_consents` exactly once, and creates `threads` rows (forward-only
+  `last_activity`) before inserting ciphertext-only email rows. Duplicate
+  provider message IDs and account-scoped body hashes are skipped before
+  insert.
+- New `TableGateway` protocol in `src/memory/supabase_client.py` confines the
+  postgrest fluent API to one module; all stores and tests depend on the
+  protocol (in-memory fake, no network).
+- `GraphAuthenticator.acquire_cached_token` adds a silent-only token path:
+  sync never starts a device flow and directs to `inboxmind connect` instead.
+- 21 new tests (92 total), including an end-to-end integration suite through
+  fake transport and gateway. Zero new dependencies (`supabase` was already
+  pinned).
+
 ## 0.2.0 - 2026-07-04
 
 - Chunk 7 (Ignition): the repository is runnable for the first time through
