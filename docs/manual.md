@@ -27,8 +27,8 @@ governance preflight passes:
 2. InboxMind is a public client using the device-code flow: no client secret
    and no redirect URI. Under Authentication, set "Allow public client flows"
    to Yes.
-3. API permissions: delegated `User.Read` and `Mail.Read` only. Do not add
-   `Mail.Send` or `Mail.ReadWrite`.
+3. API permissions: delegated `User.Read`, `Mail.Read`, and `Calendars.Read`
+   only. Do not add `Mail.Send`, `Mail.ReadWrite`, or `Calendars.ReadWrite`.
 
 Configure `.env`:
 
@@ -78,6 +78,19 @@ skipped before insert. The first sync also bootstraps the `personas` ->
 `accounts` row chain with a `default` persona placeholder until
 `inboxmind brief --profile` links a real YAML persona.
 
+From chunk 10 each sync also fetches a read-only calendar window
+(`--calendar-days N` widens it from the default today +/- 1 day) into the
+`calendar_events` table after the mail checkpoint is saved, replacing the
+whole window each run so cancelled or moved meetings never linger. Event
+bodies are never stored.
+
+Upgrading from 0.4.0: add the delegated `Calendars.Read` permission to the
+app registration, run the `calendar_events` block from `supabase/schema.sql`
+(table, index, row level security, policy) in the Supabase SQL editor once,
+then re-run `uv run inboxmind connect` so the cached token gains the new
+scope. Until then, `inboxmind sync` reports a calendar error naming exactly
+that fix.
+
 ## Brief (Chunk 9)
 
 ```bash
@@ -96,3 +109,9 @@ The brief prints to the terminal and lands at
 `$INBOXMIND_HOME/briefs/brief-YYYY-MM-DD.md`, with threads grouped by urgency
 band and every filing proposal review-only (stable ids) until
 `inboxmind review` arrives in chunk 11.
+
+From chunk 10 the brief opens with today's agenda (times in the account's
+timezone, all-day events flagged, join links included) before email triage,
+and mail from anyone on today's attendee list is boosted one urgency band
+for display (capped at critical) with the reason shown on the thread line —
+stored classifications are never rewritten.

@@ -11,15 +11,20 @@ from src.utils.encryption import FieldEncryptor
 from tests.fakes import (
     FakeTableGateway,
     ScriptedGraphTransport,
+    empty_calendar_script,
+    graph_event,
     graph_message,
     make_consent,
     make_token,
     removed_message,
+    todays_calendar_url,
+    todays_event_time,
 )
 
 INITIAL_URL = build_initial_delta_url()
 DELTA_LINK_ONE = "https://graph.microsoft.com/v1.0/delta?token=one"
 DELTA_LINK_TWO = "https://graph.microsoft.com/v1.0/delta?token=two"
+CALENDAR_URL = todays_calendar_url()
 
 
 def make_encryptor() -> FieldEncryptor:
@@ -42,6 +47,7 @@ def test_first_sync_is_full_and_second_is_incremental() -> None:
                 "value": [graph_message("m-0003", body="Body three")],
                 "@odata.deltaLink": DELTA_LINK_TWO,
             },
+            **empty_calendar_script(),
         }
     )
     consents = [make_consent()]
@@ -70,7 +76,14 @@ def test_first_sync_is_full_and_second_is_incremental() -> None:
     assert second.resynced is False
     assert second.inserted == 1
     assert second.consents_uploaded == 0
-    assert transport.requested_urls == [INITIAL_URL, DELTA_LINK_ONE]
+    assert first.calendar_events_stored == 0
+    assert first.calendar_days == 1
+    assert transport.requested_urls == [
+        INITIAL_URL,
+        CALENDAR_URL,
+        DELTA_LINK_ONE,
+        CALENDAR_URL,
+    ]
     assert transport.seen_headers[0]["Authorization"] == "Bearer synthetic-access-token"
 
     emails = gateway.tables["emails"]
@@ -111,6 +124,7 @@ def test_duplicate_ids_and_body_hashes_skipped_within_batch_and_across_runs() ->
                 "value": [graph_message("m-1001", body="Repeated body")],
                 "@odata.deltaLink": DELTA_LINK_TWO,
             },
+            **empty_calendar_script(),
         }
     )
 
@@ -146,7 +160,8 @@ def test_stale_delta_state_triggers_explicit_resync() -> None:
             INITIAL_URL: {
                 "value": [graph_message("m-2001")],
                 "@odata.deltaLink": DELTA_LINK_ONE,
-            }
+            },
+            **empty_calendar_script(),
         }
     )
     run_sync(
@@ -169,6 +184,7 @@ def test_stale_delta_state_triggers_explicit_resync() -> None:
                 ],
                 "@odata.deltaLink": DELTA_LINK_TWO,
             },
+            **empty_calendar_script(),
         }
     )
     report = run_sync(
@@ -183,8 +199,8 @@ def test_stale_delta_state_triggers_explicit_resync() -> None:
     assert report.full_sync is True
     assert report.inserted == 1
     assert report.skipped_duplicates == 1
-    # Exactly two requests: the stale error must not burn transport retries.
-    assert stale_transport.requested_urls == [DELTA_LINK_ONE, INITIAL_URL]
+    # The stale error must not burn transport retries; calendar follows mail.
+    assert stale_transport.requested_urls == [DELTA_LINK_ONE, INITIAL_URL, CALENDAR_URL]
     checkpoints = gateway.tables["account_sync_checkpoints"]
     assert len(checkpoints) == 1
     assert checkpoints[0]["graph_delta_link"] == DELTA_LINK_TWO
@@ -198,7 +214,8 @@ def test_deleted_upstream_messages_are_reported_not_stored() -> None:
             INITIAL_URL: {
                 "value": [graph_message("m-3001"), removed_message("m-3002")],
                 "@odata.deltaLink": DELTA_LINK_ONE,
-            }
+            },
+            **empty_calendar_script(),
         }
     )
 
@@ -213,3 +230,61 @@ def test_deleted_upstream_messages_are_reported_not_stored() -> None:
     assert report.fetched == 1
     assert report.deleted_upstream == 1
     assert len(gateway.tables["emails"]) == 1
+
+
+def test_calendar_events_stored_and_replaced_across_syncs() -> None:
+    gateway = FakeTableGateway()
+    encryptor = make_encryptor()
+    first_transport = ScriptedGraphTransport(
+        {
+            INITIAL_URL: {
+                "value": [graph_message("m-4001")],
+                "@odata.deltaLink": DELTA_LINK_ONE,
+            },
+            CALENDAR_URL: {
+                "value": [
+                    graph_event("evt-0001", subject="Standup"),
+                    graph_event(
+                        "evt-0002",
+                        subject="Client review",
+                        start=todays_event_time(18),
+                        end=todays_event_time(19),
+                    ),
+                ]
+            },
+        }
+    )
+
+    first = run_sync(
+        token=make_token(),
+        transport=first_transport,
+        gateway=gateway,
+        encryptor=encryptor,
+        consent_records=[],
+    )
+
+    assert first.calendar_events_stored == 2
+    rows = gateway.tables["calendar_events"]
+    assert {row["provider_event_id"] for row in rows} == {"evt-0001", "evt-0002"}
+    account_id = gateway.tables["accounts"][0]["id"]
+    assert all(row["account_id"] == account_id for row in rows)
+
+    second_transport = ScriptedGraphTransport(
+        {
+            DELTA_LINK_ONE: {"value": [], "@odata.deltaLink": DELTA_LINK_TWO},
+            CALENDAR_URL: {"value": [graph_event("evt-0001", subject="Standup (moved)")]},
+        }
+    )
+
+    second = run_sync(
+        token=make_token(),
+        transport=second_transport,
+        gateway=gateway,
+        encryptor=encryptor,
+        consent_records=[],
+    )
+
+    assert second.calendar_events_stored == 1
+    rows = gateway.tables["calendar_events"]
+    assert len(rows) == 1
+    assert rows[0]["subject"] == "Standup (moved)"

@@ -133,3 +133,17 @@ def test_oauth_consent_requires_timezone_aware_grant_time() -> None:
             granted_at=datetime(2026, 5, 15, 12, 0),
             tenant_id="organizations",
         )
+
+
+def test_required_scopes_include_read_only_calendar() -> None:
+    assert "Calendars.Read" in GRAPH_REQUIRED_SCOPES
+
+
+def test_graph_oauth_settings_reject_write_capable_calendar_scopes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_graph_env(monkeypatch)
+    monkeypatch.setenv("MICROSOFT_CLIENT_ID", "client-id")
+
+    with pytest.raises(ValidationError, match="Calendars.ReadWrite"):
+        MicrosoftGraphOAuthSettings(scopes=(*GRAPH_REQUIRED_SCOPES, "Calendars.ReadWrite"))

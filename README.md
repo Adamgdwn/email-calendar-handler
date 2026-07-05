@@ -39,16 +39,19 @@ sign-in, explicit y/N consent, Fernet-encrypted token cache —
 `inboxmind sync` (chunk 8) — full-then-incremental Graph delta sync with
 dedupe into ciphertext-only Supabase storage — and `inboxmind brief`
 (chunk 9) — persona-keyword classification over synced mail rendered as the
-first Morning Brief (`brief-YYYY-MM-DD.md`). See `docs/manual.md` for
+first Morning Brief (`brief-YYYY-MM-DD.md`) — and, from chunk 10, `sync`
+also pulls a read-only calendar window (`Calendars.Read`) so the brief
+opens with today's agenda and boosts mail from today's attendees one
+urgency band (display-only, reason recorded). See `docs/manual.md` for
 app-registration, Supabase, and persona setup.
 
 For context-cleared work sessions, use
 [`docs/production-instructions.md`](docs/production-instructions.md) as the
-single production handoff document. Example prompt: "carry on with chunk 10."
+single production handoff document. Example prompt: "carry on with chunk 11."
 
 Next focus:
-- chunk 10: read-only calendar (`Calendars.Read`) agenda and meeting-aware triage
-- chunks 11-12: review/learning loop, then local-only drafts
+- chunk 11: `inboxmind review` — accept/modify/reject proposals feeding the learning loop
+- chunk 12: local-only persona drafts
 
 ## Commands
 

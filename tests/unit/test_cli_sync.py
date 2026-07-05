@@ -11,11 +11,17 @@ from src.ingestion.graph_auth import MicrosoftGraphOAuthSettings
 from src.ingestion.graph_delta import build_initial_delta_url
 from src.ingestion.graph_token_cache import DeviceFlowClient, TokenCacheState
 from src.memory.supabase_client import SupabaseSettings, TableGateway
-from tests.fakes import FakeTableGateway, ScriptedGraphTransport, graph_message, make_consent
+from tests.fakes import (
+    FakeTableGateway,
+    ScriptedGraphTransport,
+    empty_calendar_script,
+    graph_message,
+    make_consent,
+)
 
 SILENT_RESULT: dict[str, Any] = {
     "access_token": "synthetic-access-token",
-    "scope": "User.Read Mail.Read",
+    "scope": "User.Read Mail.Read Calendars.Read",
     "id_token_claims": {
         "preferred_username": "owner@example.com",
         "oid": "00000000-0000-0000-0000-000000000001",
@@ -95,7 +101,8 @@ def test_sync_happy_path_stores_encrypted_mail(
             build_initial_delta_url(): {
                 "value": [graph_message("m-0001", body="Body one")],
                 "@odata.deltaLink": "https://graph.microsoft.com/v1.0/delta?token=one",
-            }
+            },
+            **empty_calendar_script(),
         }
     )
 
@@ -110,6 +117,7 @@ def test_sync_happy_path_stores_encrypted_mail(
     assert exit_code == 0
     assert "Synced owner@example.com" in output
     assert "1 stored encrypted" in output
+    assert "Calendar: 0 events stored for today +/- 1 day(s)." in output
     assert "synthetic-access-token" not in output
     emails = gateway.tables["emails"]
     assert len(emails) == 1
@@ -147,6 +155,16 @@ def test_sync_missing_supabase_settings_exits_config_error(
     output = capsys.readouterr().out
     assert exit_code == 2
     assert "SUPABASE_URL" in output
+
+
+def test_sync_rejects_calendar_days_below_one(
+    sync_env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code = main(["sync", "--calendar-days", "0"], client_factory=silent_client_factory)
+
+    output = capsys.readouterr().out
+    assert exit_code == 2
+    assert "--calendar-days must be at least 1" in output
 
 
 def test_sync_blank_supabase_url_is_config_error(

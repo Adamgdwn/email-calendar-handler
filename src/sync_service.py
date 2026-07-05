@@ -7,8 +7,11 @@ retry.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from pydantic import BaseModel, ValidationError
 
+from src.ingestion.graph_calendar import calendar_window_utc, fetch_calendar_events
 from src.ingestion.graph_delta import (
     DEFAULT_MAIL_FOLDER_ID,
     GraphDeltaCheckpoint,
@@ -21,6 +24,7 @@ from src.ingestion.graph_token_cache import GraphAuthError, GraphTokenResult
 from src.ingestion.graph_transport import GraphTransportError
 from src.ingestion.provider_contracts import ProviderSyncCheckpoint
 from src.memory.account_store import DEFAULT_PROFILE_ID, ensure_account, upload_consents
+from src.memory.calendar_store import replace_window
 from src.memory.checkpoint_store import CheckpointStore
 from src.memory.email_store import SupabaseEmailStore, prepare_encrypted_email_record
 from src.memory.supabase_client import TableGateway
@@ -28,6 +32,8 @@ from src.models.auth_models import OAuthConsentRecord
 from src.models.email_models import AccountContext, EmailAddress, Provider
 from src.utils.encryption import FieldEncryptor
 from src.utils.rate_limiter import retry_provider_call
+
+DEFAULT_CALENDAR_DAYS = 1
 
 
 class SyncReport(BaseModel):
@@ -40,6 +46,8 @@ class SyncReport(BaseModel):
     skipped_duplicates: int
     deleted_upstream: int
     consents_uploaded: int
+    calendar_days: int
+    calendar_events_stored: int
 
 
 def run_sync(
@@ -50,6 +58,7 @@ def run_sync(
     encryptor: FieldEncryptor,
     consent_records: list[OAuthConsentRecord],
     mail_folder_id: str = DEFAULT_MAIL_FOLDER_ID,
+    calendar_days: int = DEFAULT_CALENDAR_DAYS,
 ) -> SyncReport:
     _require_email_subject(token)
     account_id = ensure_account(
@@ -98,6 +107,7 @@ def run_sync(
             graph_delta_link=result.delta_link,
         )
     )
+    calendar_events_stored = _sync_calendar(transport, token, gateway, account_id, calendar_days)
     return SyncReport(
         account_email=token.subject,
         mail_folder_id=mail_folder_id,
@@ -108,6 +118,8 @@ def run_sync(
         skipped_duplicates=batch.skipped_duplicates,
         deleted_upstream=len(result.deleted_message_ids),
         consents_uploaded=consents_uploaded,
+        calendar_days=calendar_days,
+        calendar_events_stored=calendar_events_stored,
     )
 
 
@@ -139,4 +151,32 @@ def _run_delta(
             checkpoint=checkpoint,
         ),
         retry_exception_types=(GraphTransportError,),
+    )
+
+
+def _sync_calendar(
+    transport: GraphTransport,
+    token: GraphTokenResult,
+    gateway: TableGateway,
+    account_id: str,
+    calendar_days: int,
+) -> int:
+    """Mail is the critical path: this runs only after the delta checkpoint
+    is saved, so a calendar failure never loses mail progress."""
+    window_start, window_end = calendar_window_utc(datetime.now(tz=UTC).date(), calendar_days)
+    events = retry_provider_call(
+        lambda: fetch_calendar_events(
+            transport,
+            access_token=token.access_token.get_secret_value(),
+            start=window_start,
+            end=window_end,
+        ),
+        retry_exception_types=(GraphTransportError,),
+    )
+    return replace_window(
+        gateway,
+        account_id=account_id,
+        window_start=window_start,
+        window_end=window_end,
+        events=events,
     )

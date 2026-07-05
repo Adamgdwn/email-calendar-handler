@@ -42,6 +42,7 @@ class TableGateway(Protocol):
         eq: dict[str, str],
         in_filter: tuple[str, list[str]] | None = None,
         gte: tuple[str, str] | None = None,
+        lt: tuple[str, str] | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def insert_rows(self, table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
@@ -52,6 +53,16 @@ class TableGateway(Protocol):
 
     def update_rows(
         self, table: str, values: dict[str, Any], *, eq: dict[str, str]
+    ) -> list[dict[str, Any]]: ...
+
+    def delete_rows(
+        self,
+        table: str,
+        *,
+        eq: dict[str, str],
+        in_filter: tuple[str, list[str]] | None = None,
+        gte: tuple[str, str] | None = None,
+        lt: tuple[str, str] | None = None,
     ) -> list[dict[str, Any]]: ...
 
 
@@ -69,6 +80,7 @@ class SupabaseTableGateway:
         eq: dict[str, str],
         in_filter: tuple[str, list[str]] | None = None,
         gte: tuple[str, str] | None = None,
+        lt: tuple[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         query = self._client.table(table).select(columns)
         for column, value in eq.items():
@@ -79,6 +91,9 @@ class SupabaseTableGateway:
         if gte is not None:
             column, bound = gte
             query = query.gte(column, bound)
+        if lt is not None:
+            column, bound = lt
+            query = query.lt(column, bound)
         return _dict_rows(query.execute().data)
 
     def insert_rows(self, table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -100,6 +115,29 @@ class SupabaseTableGateway:
         query = self._client.table(table).update(values)
         for column, value in eq.items():
             query = query.eq(column, value)
+        return _dict_rows(query.execute().data)
+
+    def delete_rows(
+        self,
+        table: str,
+        *,
+        eq: dict[str, str],
+        in_filter: tuple[str, list[str]] | None = None,
+        gte: tuple[str, str] | None = None,
+        lt: tuple[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        query = self._client.table(table).delete()
+        for column, value in eq.items():
+            query = query.eq(column, value)
+        if in_filter is not None:
+            column, values = in_filter
+            query = query.in_(column, values)
+        if gte is not None:
+            column, bound = gte
+            query = query.gte(column, bound)
+        if lt is not None:
+            column, bound = lt
+            query = query.lt(column, bound)
         return _dict_rows(query.execute().data)
 
 
