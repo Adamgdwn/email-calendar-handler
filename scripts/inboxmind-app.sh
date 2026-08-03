@@ -88,7 +88,30 @@ MENU
       run brief || true
       run review || true
       ;;
-    1) run connect || true ;;
+    1)
+      echo
+      echo "  Configured accounts: ${_accts:-"(none — check .env)"}"
+      echo "  Existing aliases: $(ls "$REPO/src/personas/"*.yaml 2>/dev/null | xargs -I{} basename {} .yaml | tr '\n' ' ')"
+      echo
+      read -rp "  Account alias to connect (e.g. outlook_work, hotmail — blank = default): " _new_alias
+      if [ -n "$_new_alias" ]; then
+        _current_accts=$(grep '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null | cut -d= -f2-)
+        if ! echo "$_current_accts" | grep -qw "$_new_alias"; then
+          read -rp "  Add '$_new_alias' to INBOXMIND_ACCOUNTS in .env? [Y/n]: " _add_env
+          if [[ ! "$_add_env" =~ ^[nN]$ ]]; then
+            if grep -q '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null; then
+              sed -i "s/^INBOXMIND_ACCOUNTS=.*/INBOXMIND_ACCOUNTS=${_current_accts:+$_current_accts,}$_new_alias/" "$REPO/.env"
+            else
+              echo "INBOXMIND_ACCOUNTS=$_new_alias" >> "$REPO/.env"
+            fi
+            echo "  Added '$_new_alias' to INBOXMIND_ACCOUNTS."
+          fi
+        fi
+        run connect --account "$_new_alias" || true
+      else
+        run connect || true
+      fi
+      ;;
     2) run sync || true ;;
     3) run brief || true ;;
     4) run review || true ;;
