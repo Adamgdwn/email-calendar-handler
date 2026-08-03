@@ -65,5 +65,7 @@ def load_imap_credentials(alias: str, key_b64: str, home: Path) -> ImapCredentia
 def test_imap_connection(creds: ImapCredentials) -> None:
     """Verify credentials; raises imaplib.IMAP4.error if login fails."""
     ctx = ssl.create_default_context()
+    # SECLEVEL=1 allows legacy 1024-bit DH keys used by some ISP servers (e.g. Shaw).
+    ctx.set_ciphers("DEFAULT@SECLEVEL=1")
     with imaplib.IMAP4_SSL(creds.host, creds.port, ssl_context=ctx) as imap:
         imap.login(creds.username, creds.password)

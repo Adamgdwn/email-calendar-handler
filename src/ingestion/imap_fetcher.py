@@ -56,6 +56,8 @@ def fetch_imap_raw_emails(
 ) -> list[RawEmail]:
     """Return RawEmail list for messages in *folder* received on or after *since*."""
     ctx = ssl.create_default_context()
+    # SECLEVEL=1 allows legacy 1024-bit DH keys used by some ISP servers (e.g. Shaw).
+    ctx.set_ciphers("DEFAULT@SECLEVEL=1")
     results: list[RawEmail] = []
     since_str = since.strftime("%d-%b-%Y")
 
