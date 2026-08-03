@@ -16,3 +16,6 @@ build/
 .DS_Store
 supabase/.branches/
 supabase/.temp/
+graph_token_cache*.enc
+account_*.email
+consent_log.jsonl

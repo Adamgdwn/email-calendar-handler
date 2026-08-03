@@ -112,10 +112,22 @@ while true; do
       _env_accts=$(grep '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null | cut -d= -f2- | tr ',' ' ')
       [ -n "$_env_accts" ] && echo "  Existing aliases: $_env_accts"
       echo
-      read -rp "  Email address to connect (e.g. user@hotmail.com): " _new_email
+      read -rp "  Email address to connect (e.g. user@outlook.com): " _new_email
       if [ -n "$_new_email" ]; then
-        # Derive alias from email domain (user@hotmail.com -> hotmail)
+        # Reject known IMAP-only providers — InboxMind uses Microsoft Graph only.
         _domain="${_new_email#*@}"
+        case "$_domain" in
+          shaw.ca|shawcable.net|rogers.com|bell.net|sympatico.ca|\
+          gmail.com|googlemail.com|yahoo.com|yahoo.ca|ymail.com|\
+          icloud.com|me.com|mac.com)
+            echo
+            echo "  ERROR: $_domain is not a Microsoft account."
+            echo "  InboxMind currently supports Microsoft 365, Outlook, Hotmail,"
+            echo "  and Live accounts only. IMAP support is planned for a future update."
+            echo
+            continue
+            ;;
+        esac
         _new_alias="${_domain%%.*}"
         _new_alias=$(printf '%s' "$_new_alias" | tr '[:upper:]' '[:lower:]' \
                      | tr -cs 'a-z0-9' '_' | sed 's/_*$//')
