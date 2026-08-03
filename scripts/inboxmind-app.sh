@@ -97,16 +97,22 @@ MENU
       ;;
     1)
       echo
-      echo "  Connected accounts:"
+      echo "  Connected accounts (with sidecar email on file):"
       _c=0
       for _f in "$_inboxmind_home"/account_*.email; do
         [ -f "$_f" ] || continue
         _al=$(basename "$_f" .email | sed 's/^account_//')
         _em=$(< "$_f"); _em="${_em%%$'\n'*}"
-        echo "    $_al → $_em"
+        echo "    [$_al]  $_em"
         _c=$((_c + 1))
       done
       [ "$_c" -eq 0 ] && echo "    (none yet)"
+      _env_accts=$(grep '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null | cut -d= -f2- | tr ',' ' ')
+      if [ -n "$_env_accts" ]; then
+        echo
+        echo "  Configured aliases (in .env): $_env_accts"
+        echo "  Use one of these aliases when reconnecting an existing account."
+      fi
       echo
       echo "  Sign-in opens a browser link — no password is typed here."
       read -rp "  Email address to connect (e.g. user@hotmail.com — blank = reconnect default): " _new_email
