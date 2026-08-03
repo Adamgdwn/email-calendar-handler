@@ -61,6 +61,7 @@ while true; do
   │  3) brief    — today's Morning Brief           │
   │  4) review   — accept / modify / reject        │
   │  5) open the latest brief file                 │
+  │  6) audit  — propose a better folder structure │
   │  q) quit                                       │
   └────────────────────────────────────────────────┘
 MENU
@@ -83,6 +84,7 @@ MENU
       if [ -n "$brief_file" ]; then xdg-open "$brief_file" >/dev/null 2>&1 &
       else echo "  No brief file yet — run 'brief' first."; fi
       ;;
+    6) run audit || true ;;
     q|Q) exit 0 ;;
     *) echo "  Unrecognized choice." ;;
   esac

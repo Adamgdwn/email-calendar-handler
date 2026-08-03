@@ -1,6 +1,6 @@
 # Production Instructions
 
-Last Updated: 2026-07-05 (chunk 13 Inbox Audit added; old chunk 13 renumbered to 14)
+Last Updated: 2026-08-02 (chunk 14 promoted to required; chunks 15-16 scoped)
 
 Use this document as the single restart point after clearing the context window.
 When the user says "carry on with chunk N", load this file first, then execute
@@ -404,18 +404,89 @@ Done criteria:
   output structure.
 - Option 6 appears in the launcher menu.
 
-### Chunk 14 (Optional): LLM Classification Assist
+### Chunk 14: LLM Classification Assist
 
-Goal: spend tokens only where deterministic rules are weak.
+Goal: spend tokens only where deterministic rules are weak. This chunk is
+required — keyword-only classification with sparse persona lists produces
+low-signal briefs until the learning loop has accumulated 2–4 weeks of
+feedback. LLM assist on low-confidence items closes that gap on day 1.
+
+Read:
+- `src/agents/CLAUDE.md`
+- `src/agents/classification_agent.py`
+- `src/llm/anthropic_client.py` (created in chunk 12)
 
 Done criteria:
 - Anthropic classification runs only when deterministic confidence is below a
-  configured threshold, receives metadata plus the 500-character excerpt only,
-  and returns a validated `Classification`.
+  configured threshold, receives metadata plus the 500-character excerpt only
+  (body boundary discipline preserved), and returns a validated `Classification`.
 - Results cache by account-scoped body hash; a per-day token budget guard
-  stops overruns.
-- Feedback outcomes compare deterministic vs LLM accuracy before any default
-  flips.
+  (configurable, default conservative) stops overruns.
+- Feedback outcomes compare deterministic vs LLM classification accuracy over
+  rolling 50 decisions; a summary line appears in the brief footer.
+- No default flip: the LLM path requires explicit opt-in config; the
+  deterministic path stays authoritative above the threshold.
+
+### Chunk 15: Multiple Accounts — All Inboxes
+
+Goal: read all of Adam's inboxes (Red Deer, Guided AI Labs, Shaw, and any
+others) in a single morning brief. Each account runs through its own persona
+(professional / leadership / relaxed) with no cross-account persona bleed.
+This is the foundation for Phase 2 provider expansion; prove it with multiple
+Outlook accounts before adding Gmail.
+
+Read:
+- `src/models/auth_models.py`
+- `src/personas/` (all YAML files)
+- `src/memory/CLAUDE.md`
+- `docs/roadmap.md` (Phase 2 gate conditions)
+
+Expected files / changes:
+- `src/cli.py` — `connect` and `sync` accept `--account <alias>` or iterate
+  over all configured accounts when no alias is given.
+- `src/brief/renderer.py` — brief sections keyed per account with the account
+  persona's tone label; no section bleeds into another's tone or taxonomy.
+- `src/memory/` — token caches, checkpoints, and consent records are
+  account-scoped (already designed this way in the schema; verify and enforce).
+- `src/personas/` — ensure a YAML persona exists for each target account; add
+  any missing ones.
+- `tests/unit/test_multi_account_brief.py` — fake fixtures only.
+
+Done criteria:
+- `inboxmind sync` with no arguments syncs all configured accounts
+  sequentially; each account's delta checkpoint is independent.
+- `inboxmind brief` with no arguments renders a single brief covering all
+  accounts, grouped by account with the correct persona tone per section.
+- No cross-account persona bleed: classification, filing, and drafting for
+  account A use only account A's persona.
+- Adding a new account requires only: a new persona YAML, a new `.env` entry
+  for account credentials, and one `inboxmind connect --account <alias>` run.
+- Tests cover multi-account brief rendering and per-account checkpoint
+  isolation with fake transports.
+
+### Chunk 16: Proactive Alerting — Hourly CRITICAL Check
+
+Goal: surface CRITICAL mail as it arrives, not only at morning brief time.
+No write scopes. Minimal surface change — a systemd timer plus a desktop
+notification.
+
+Expected files / changes:
+- `src/cli.py` gains `check` — a lightweight command that syncs recent
+  messages (last 1 hour window) and emits a desktop notification if any
+  CRITICAL items are found. No brief file is written.
+- `scripts/inboxmind-check.service` and `scripts/inboxmind-check.timer` —
+  systemd user timer that runs `inboxmind check` every hour.
+- `scripts/install-check-timer.sh` — one-shot installer for the timer unit.
+- `scripts/inboxmind-app.sh` gains option to enable/disable the hourly check.
+
+Done criteria:
+- `inboxmind check` exits silently (zero) when no CRITICAL items are found;
+  emits a `notify-send` desktop notification listing subject lines when it does.
+- The systemd timer fires hourly and does not re-notify for items already
+  seen (track notified message IDs in a local flat file under `INBOXMIND_HOME`).
+- No new Graph scopes required; reuses the existing encrypted token cache.
+- Tests cover the CRITICAL-filter logic and the already-notified dedup with
+  fake transport fixtures.
 
 ### Write-Scope Gate (post-v1)
 
@@ -437,32 +508,45 @@ master-env `SUPABASE_*` overrides `.env`; the launcher auto-unsets it.
 
 The terminal is a stopgap. The intended form factor is a polished, web-like
 daily-briefing UI (sophisticated newsfeed style) over the same deterministic
-pipeline, plus multi-account support (read all inboxes, response tone per
-account). Not yet scoped into a chunk.
+pipeline. Multi-account support (all inboxes, per-account persona tone) is
+scoped as Chunk 15 on the terminal surface first; the UI layer follows in
+Phase 4.
 
 ## Current Recommendation
 
-Say:
-
-```text
-Carry on with chunk 12.
-```
-
-That adds `inboxmind draft`: persona-toned reply drafts for review only.
-ResponseAgent may take full thread context (drafting is allowed), tone and
-constraints come from the persona YAML, and output goes to terminal/clipboard
-and the brief only — nothing is written to the mailbox and nothing is sent, so
-`human_approved` stays false. Token budgets from agent class attributes are
-enforced via `src/utils/token_counter.py`, with a per-draft cost line.
-
-After chunk 12, say:
+Chunk 13 (Inbox Audit) is in progress — untracked source files exist in
+`src/inbox_audit/` and `src/models/audit_models.py`. To continue:
 
 ```text
 Carry on with chunk 13.
 ```
 
-That adds `inboxmind audit`: a one-time deep scan of the full mailbox folder
-tree and message metadata (no body content) that proposes a better filing
-hierarchy via a single Anthropic call against a compact cluster summary.
-Output is a Markdown audit report at `INBOXMIND_HOME/audits/`; no mailbox
-writes. Requires the Anthropic client from chunk 12.
+After chunk 13, continue in order:
+
+```text
+Carry on with chunk 14.
+```
+
+LLM classification assist — now required (promoted from optional). Bridges the
+day-1 classification quality gap before the learning loop has accumulated enough
+feedback to make keyword-only classification reliable.
+
+```text
+Carry on with chunk 15.
+```
+
+Multiple accounts — all inboxes in a single brief, each with its own persona
+tone. Red Deer (professional), Guided AI Labs (leadership), Shaw (relaxed).
+Prove the pattern with multiple Outlook accounts before Phase 2 adds Gmail.
+
+```text
+Carry on with chunk 16.
+```
+
+Proactive alerting — hourly systemd timer that runs `inboxmind check` and fires
+a desktop notification when CRITICAL mail arrives. No new scopes.
+
+Note: the draft edit distance signal (logged in chunk 12 done criteria) is not
+yet implemented in `src/cli.py` — the CLI prints "pending review". Implement
+this before the write-scope gate conversation begins; it is the quality signal
+that justifies trusting drafts enough to eventually save them to the mailbox.

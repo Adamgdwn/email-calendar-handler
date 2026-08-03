@@ -1,11 +1,14 @@
 """InboxMind command-line interface.
 
-Chunk 12 surface: `inboxmind connect`, `inboxmind sync` (mail plus a
+Chunk 13 surface: `inboxmind connect`, `inboxmind sync` (mail plus a
 read-only calendar window), `inboxmind brief` (agenda-first triage),
-`inboxmind review` (accept/modify/reject filing proposals), and
-`inboxmind draft` (persona-toned reply drafts for terminal review only).
+`inboxmind review` (accept/modify/reject filing proposals),
+`inboxmind draft` (persona-toned reply drafts for terminal review only), and
+`inboxmind audit` (folder-tree scan → deterministic clustering → proposed
+filing hierarchy written to INBOXMIND_HOME/audits/).
 Every command is read-only against the mailbox; connect requires an explicit
-human yes before any sign-in; draft output is never written to the mailbox.
+human yes before any sign-in; draft and audit output is never written to the
+mailbox.
 """
 
 from __future__ import annotations
@@ -32,6 +35,10 @@ from src.brief_service import (
     PersonaSelectionError,
     run_brief,
 )
+from src.inbox_audit.audit_renderer import render_audit_report
+from src.inbox_audit.audit_synthesizer import AuditSynthesisError, AuditSynthesizer
+from src.inbox_audit.cluster_builder import ClusterBuilder
+from src.inbox_audit.folder_fetcher import AuditFetchError, FolderFetcher
 from src.ingestion.graph_auth import MicrosoftGraphOAuthSettings
 from src.ingestion.graph_calendar import GraphCalendarError
 from src.ingestion.graph_token_cache import (
@@ -47,6 +54,7 @@ from src.llm.anthropic_client import AnthropicClient
 from src.memory.account_store import ACCOUNTS_TABLE, link_account_persona, persona_profile_id
 from src.memory.email_store import EMAILS_TABLE
 from src.memory.supabase_client import SupabaseSettings, TableGateway, build_table_gateway
+from src.models.audit_models import AuditReport
 from src.models.auth_models import OAuthConsentRecord
 from src.models.brief_models import FilingProposal
 from src.models.email_models import Provider
@@ -115,6 +123,8 @@ def main(
             profile=args.profile,
             hours=args.hours,
         )
+    if args.command == "audit":
+        return _run_audit(client_factory, transport_factory, months=args.months)
     parser.error(f"unknown command: {args.command}")
 
 
@@ -185,6 +195,19 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_LOOKBACK_HOURS,
         help=f"Lookback window for the thread menu (default {DEFAULT_LOOKBACK_HOURS}).",
+    )
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help=(
+            "Scan folder tree and propose a better filing hierarchy; "
+            "writes a report to INBOXMIND_HOME/audits/."
+        ),
+    )
+    audit_parser.add_argument(
+        "--months",
+        type=int,
+        default=12,
+        help="Scan messages from the last N months (default 12).",
     )
     return parser
 
@@ -557,6 +580,106 @@ def _run_draft(
     draft = agent.run(request)
     _print_draft(draft)
     return EXIT_OK
+
+
+def _run_audit(
+    client_factory: ClientFactory,
+    transport_factory: TransportFactory,
+    *,
+    months: int,
+) -> int:
+    from datetime import timedelta
+
+    from src.ingestion.graph_auth import MicrosoftGraphOAuthSettings
+
+    if months < 1:
+        print("Configuration error: --months must be at least 1.")
+        return EXIT_CONFIG_ERROR
+    app_settings = _load_settings(AppSettings, env_prefix="")
+    if app_settings is None:
+        return EXIT_CONFIG_ERROR
+    graph_settings = _load_settings(MicrosoftGraphOAuthSettings, env_prefix="MICROSOFT_")
+    if graph_settings is None:
+        return EXIT_CONFIG_ERROR
+    anthropic_settings = _load_settings(AnthropicSettings, env_prefix="ANTHROPIC_")
+    if anthropic_settings is None:
+        return EXIT_CONFIG_ERROR
+    encryptor = _build_encryptor(app_settings)
+    if encryptor is None:
+        return EXIT_CONFIG_ERROR
+
+    from src.ingestion.graph_token_cache import EncryptedTokenCache, GraphAuthenticator
+
+    cache_store = EncryptedTokenCache(app_settings.inboxmind_home / TOKEN_CACHE_FILENAME, encryptor)
+    authenticator = GraphAuthenticator(graph_settings, cache_store, client_factory)
+    token = authenticator.acquire_cached_token()
+    if token is None:
+        print("No cached sign-in found. Run `inboxmind connect` first.")
+        return EXIT_FAILURE
+
+    access_token = token.access_token.get_secret_value()
+    cutoff = (datetime.now(UTC) - timedelta(days=30 * months)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    transport = transport_factory()
+    try:
+        fetcher = FolderFetcher(transport, access_token)
+        print(f"Fetching folder tree for {token.subject}…")
+        folder_tree = fetcher.fetch_folder_tree()
+
+        all_rows = []
+        flat_folders = _collect_folder_paths(folder_tree)
+        for folder_node, folder_path in flat_folders:
+            rows = fetcher.fetch_message_metadata(folder_node.folder_id, folder_path, cutoff)
+            all_rows.extend(rows)
+        print(f"  {len(all_rows):,} message metadata rows across {len(flat_folders)} folders.")
+
+        summary = ClusterBuilder().build(
+            rows=all_rows,
+            folder_tree=folder_tree,
+            account_email=token.subject,
+            months_scanned=months,
+        )
+
+        print("Synthesizing folder proposal with Anthropic…")
+        synthesizer = AuditSynthesizer(AnthropicClient(anthropic_settings.api_key))
+        try:
+            proposal, llm_response = synthesizer.synthesize(summary)
+        except AuditSynthesisError as exc:
+            print(f"Audit synthesis failed: {exc}")
+            return EXIT_FAILURE
+
+        audits_dir = app_settings.inboxmind_home / "audits"
+        report_path = audits_dir / f"audit-{date.today().isoformat()}.md"
+        report = AuditReport(
+            summary=summary,
+            proposal=proposal,
+            report_path=report_path,
+            input_tokens=llm_response.input_tokens,
+            output_tokens=llm_response.output_tokens,
+        )
+        render_audit_report(report)
+    except AuditFetchError as exc:
+        print(f"Audit fetch failed: {exc}")
+        return EXIT_FAILURE
+    except GraphTransportError as exc:
+        print(f"Audit fetch failed after retries: {exc}")
+        return EXIT_FAILURE
+    finally:
+        transport.close()
+    return EXIT_OK
+
+
+def _collect_folder_paths(
+    nodes: list[Any], prefix: list[str] | None = None
+) -> list[tuple[Any, list[str]]]:
+    """Flatten a folder tree into (FolderNode, path) pairs, depth-first."""
+    prefix = prefix or []
+    result: list[tuple[Any, list[str]]] = []
+    for node in nodes:
+        path = [*prefix, node.display_name]
+        result.append((node, path))
+        result.extend(_collect_folder_paths(node.child_folders, path))
+    return result
 
 
 def _pick_draft_thread(gateway: TableGateway, account_id: str, *, hours: int) -> str | None:

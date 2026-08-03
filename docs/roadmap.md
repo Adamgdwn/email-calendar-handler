@@ -1,6 +1,6 @@
 # Roadmap
 
-Last Updated: 2026-07-05
+Last Updated: 2026-08-02
 
 ## North Star
 
@@ -33,8 +33,14 @@ Remaining slices, in order (details in
 7. Chunk 13 — Inbox Audit: full folder-tree + metadata scan, deterministic
    clustering, single Anthropic synthesis call, proposed folder hierarchy
    written to `INBOXMIND_HOME/audits/audit-YYYY-MM-DD.md`. Read-only.
-8. Chunk 14 (optional) — LLM classification assist where deterministic
-   confidence is low, budget-guarded.
+8. Chunk 14 — LLM classification assist where deterministic confidence is
+   low, budget-guarded. Required: bridges the day-1 classification quality
+   gap before the learning loop accumulates enough feedback.
+9. Chunk 15 — Multiple Accounts: all inboxes (Red Deer, Guided AI Labs,
+   Shaw, and future additions) in a single morning brief; per-account persona
+   tone with no cross-account bleed. Proves multi-account before Phase 2.
+10. Chunk 16 — Proactive Alerting: hourly systemd timer + `inboxmind check`;
+    desktop notification on CRITICAL items; no new Graph scopes.
 
 ### v1 Ship Gate (Definition of Usable)
 
@@ -58,12 +64,13 @@ consciously opened, never drifted into:
 - Autonomy level stays A1: every external write is individually
   human-approved.
 
-## Phase 2: Second Account and Second Provider
+## Phase 2: Multiple Accounts and Provider Expansion
 
-Gmail becomes the next provider after Outlook is proven. Account isolation,
-municipal taxonomy, and no persona bleed across accounts are required before
-broader use. Calendar write (scheduling proposals) is considered here at the
-earliest, behind the same human-approval gate.
+Multiple Outlook accounts are proven first in Chunk 15 (Phase 1). Phase 2
+adds Gmail as the second provider once the multi-account pattern is stable.
+Account isolation, per-account persona tone, and no persona bleed across
+accounts are required before broader use. Calendar write (scheduling proposals)
+is considered here at the earliest, behind the same human-approval gate.
 
 ## Phase 3: Relationship Enrichment
 
