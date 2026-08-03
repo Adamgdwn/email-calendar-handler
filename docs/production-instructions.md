@@ -1,6 +1,6 @@
 # Production Instructions
 
-Last Updated: 2026-08-03 (chunk 15 delivered; chunk 16 is next)
+Last Updated: 2026-08-03 (chunk 16 delivered; chunk 17 is next)
 
 Use this document as the single restart point after clearing the context window.
 When the user says "carry on with chunk N", load this file first, then execute
@@ -468,6 +468,8 @@ Done criteria:
 
 ### Chunk 16: Proactive Alerting — Hourly CRITICAL Check
 
+Status: delivered 2026-08-03 (committed straight to main.)
+
 Goal: surface CRITICAL mail as it arrives, not only at morning brief time.
 No write scopes. Minimal surface change — a systemd timer plus a desktop
 notification.
@@ -516,14 +518,17 @@ Phase 4.
 
 ## Current Recommendation
 
-Chunks 0–15 are delivered. Next:
+Chunks 0–16 are delivered. The draft edit-distance signal (logged in chunk 12
+done criteria) is not yet implemented in `src/cli.py` — the CLI prints
+"pending review". This must be implemented before the write-scope gate
+conversation begins; it is the quality signal that justifies trusting drafts.
+
+No chunk 17 is scoped yet. Next action is to define it, or to revisit the
+draft edit-distance signal as a targeted fix.
 
 ```text
-Carry on with chunk 16.
+Carry on with the next chunk.
 ```
-
-Proactive alerting — hourly systemd timer that runs `inboxmind check` and fires
-a desktop notification when CRITICAL mail arrives. No new scopes.
 
 Note: the draft edit distance signal (logged in chunk 12 done criteria) is not
 yet implemented in `src/cli.py` — the CLI prints "pending review". Implement
