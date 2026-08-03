@@ -16,6 +16,7 @@ class EmailAddress(BaseModel):
 class Provider(StrEnum):
     MICROSOFT_GRAPH = "microsoft_graph"
     GMAIL = "gmail"
+    IMAP = "imap"
 
 
 class SenderTaxonomy(StrEnum):

@@ -12,6 +12,8 @@ mailbox.
 from __future__ import annotations
 
 import argparse
+import getpass
+import json
 import os
 import subprocess
 from collections.abc import Callable, Sequence
@@ -54,6 +56,15 @@ from src.ingestion.graph_token_cache import (
     build_msal_client,
 )
 from src.ingestion.graph_transport import GraphTransportError, HttpxGraphTransport
+from src.ingestion.imap_auth import (
+    ImapCredentials,
+    imap_server_for_email,
+    is_imap_account,
+    load_imap_credentials,
+    save_imap_credentials,
+    test_imap_connection,
+)
+from src.ingestion.imap_fetcher import fetch_imap_raw_emails
 from src.llm.anthropic_client import AnthropicClient
 from src.memory.account_store import ACCOUNTS_TABLE, link_account_persona, persona_profile_id
 from src.memory.email_store import EMAILS_TABLE
@@ -149,7 +160,11 @@ def main(
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "connect":
-        return _run_connect(client_factory, account_alias=args.account_alias)
+        return _run_connect(
+            client_factory,
+            account_alias=args.account_alias,
+            imap_email=args.imap_email,
+        )
     if args.command == "sync":
         return _run_sync(
             client_factory,
@@ -198,6 +213,14 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="ALIAS",
         help="Account alias for multi-account setups (e.g. guided_ai_labs). "
         "Uses a dedicated token cache when given.",
+    )
+    connect_parser.add_argument(
+        "--imap",
+        dest="imap_email",
+        default=None,
+        metavar="EMAIL",
+        help="Connect an IMAP/ISP mailbox with this email address. "
+        "Prompts for password; credentials stored encrypted at rest.",
     )
     sync_parser = subparsers.add_parser(
         "sync",
@@ -287,7 +310,16 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_connect(client_factory: ClientFactory, *, account_alias: str | None = None) -> int:
+def _run_connect(
+    client_factory: ClientFactory,
+    *,
+    account_alias: str | None = None,
+    imap_email: str | None = None,
+) -> int:
+    # Route to IMAP connect when the email domain is a known IMAP provider.
+    if imap_email and imap_server_for_email(imap_email) is not None:
+        return _connect_imap(imap_email, alias=account_alias)
+
     app_settings = _load_settings(AppSettings, env_prefix="")
     if app_settings is None:
         return EXIT_CONFIG_ERROR
@@ -341,6 +373,52 @@ def _run_connect(client_factory: ClientFactory, *, account_alias: str | None = N
     account_type = token.account_type or "unknown account type"
     print(f"Connected as {token.subject} ({account_type}) via {source}.")
     print(f"Consent recorded at {consent_path}.")
+    return EXIT_OK
+
+
+def _connect_imap(email: str, *, alias: str | None) -> int:
+    server = imap_server_for_email(email)
+    if server is None:
+        domain = email.split("@", 1)[-1]
+        print(f"No IMAP server configured for {domain}.")
+        print("Add it to IMAP_SERVERS in src/ingestion/imap_auth.py and retry.")
+        return EXIT_FAILURE
+
+    app_settings = _load_settings(AppSettings, env_prefix="")
+    if app_settings is None:
+        return EXIT_CONFIG_ERROR
+
+    host, port = server
+    resolved_alias = alias or email.split("@")[1].split(".")[0]
+
+    print(f"Connecting {email} via IMAP ({host}:{port})")
+    print("Password is encrypted at rest and never stored or transmitted in plaintext.")
+    try:
+        password = getpass.getpass(f"Password for {email}: ")
+    except (EOFError, KeyboardInterrupt):
+        print("\nAborted.")
+        return EXIT_FAILURE
+    if not password:
+        print("Empty password — aborted.")
+        return EXIT_FAILURE
+
+    creds = ImapCredentials(host=host, port=port, username=email, password=password)
+    print("Testing connection…")
+    try:
+        test_imap_connection(creds)
+    except Exception as exc:
+        print(f"Connection failed: {exc}")
+        return EXIT_FAILURE
+
+    save_imap_credentials(
+        resolved_alias, creds, app_settings.encryption_key_base64, app_settings.inboxmind_home
+    )
+
+    sidecar_path = app_settings.inboxmind_home / f"account_{resolved_alias}.email"
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+    sidecar_path.write_text(email + "\n", encoding="utf-8")
+
+    print(f"Connected {email} — credentials encrypted and stored.")
     return EXIT_OK
 
 
@@ -405,6 +483,15 @@ def _sync_alias(
     encryptor: FieldEncryptor,
     calendar_days: int,
 ) -> int:
+    if alias and is_imap_account(alias, app_settings.inboxmind_home):
+        return _sync_imap_alias(
+            alias,
+            gateway_factory=gateway_factory,
+            app_settings=app_settings,
+            supabase_settings=supabase_settings,
+            encryptor=encryptor,
+        )
+
     cache_store = EncryptedTokenCache(
         app_settings.inboxmind_home / _token_cache_filename(alias), encryptor
     )
@@ -448,6 +535,92 @@ def _sync_alias(
         transport.close()
     _print_sync_report(report)
     return EXIT_OK
+
+
+def _sync_imap_alias(
+    alias: str,
+    *,
+    gateway_factory: GatewayFactory,
+    app_settings: AppSettings,
+    supabase_settings: SupabaseSettings,
+    encryptor: FieldEncryptor,
+) -> int:
+    from src.memory.account_store import DEFAULT_PROFILE_ID, ensure_account
+    from src.memory.email_store import SupabaseEmailStore, prepare_encrypted_email_record
+    from src.models.email_models import AccountContext, Provider
+
+    try:
+        creds = load_imap_credentials(
+            alias, app_settings.encryption_key_base64, app_settings.inboxmind_home
+        )
+    except Exception as exc:
+        print(f"[{alias}] Failed to load IMAP credentials: {exc}")
+        return EXIT_FAILURE
+
+    delta_path = app_settings.inboxmind_home / f"imap_delta_{alias}.json"
+    if delta_path.exists():
+        since = datetime.fromisoformat(json.loads(delta_path.read_text(encoding="utf-8"))["since"])
+    else:
+        since = datetime.now(UTC) - timedelta(days=30)
+
+    print(f"[{alias}] Fetching IMAP headers since {since.date()}…")
+    try:
+        raw_emails = fetch_imap_raw_emails(creds, since=since)
+    except Exception as exc:
+        print(f"[{alias}] IMAP fetch failed: {exc}")
+        return EXIT_FAILURE
+
+    if not raw_emails:
+        print(f"[{alias}] No new messages.")
+        _write_imap_checkpoint(delta_path)
+        return EXIT_OK
+
+    gateway = gateway_factory(supabase_settings)
+    try:
+        account_id = ensure_account(
+            gateway,
+            provider=Provider.IMAP,
+            primary_email=creds.username,
+            display_name=alias,
+            org_type="personal",
+            scopes=[],
+        )
+    except Exception as exc:
+        print(f"[{alias}] Failed to register account in Supabase: {exc}")
+        return EXIT_FAILURE
+
+    account_context = AccountContext(
+        account_id=account_id,
+        profile_id=DEFAULT_PROFILE_ID,
+        provider=Provider.IMAP,
+        display_name=alias,
+        primary_email=creds.username,
+        org_type="personal",
+    )
+
+    records = [
+        prepare_encrypted_email_record(account_context, email, encryptor) for email in raw_emails
+    ]
+
+    store = SupabaseEmailStore(gateway)
+    try:
+        result = store.store_batch(account_id, records)
+    except APIError as exc:
+        print(f"[{alias}] Supabase write failed: {exc.message}")
+        return EXIT_FAILURE
+
+    _write_imap_checkpoint(delta_path)
+    dupes = result.skipped_duplicates
+    print(f"[{alias}] Inserted {result.inserted}, skipped {dupes} duplicate(s).")
+    return EXIT_OK
+
+
+def _write_imap_checkpoint(delta_path: Path) -> None:
+    delta_path.parent.mkdir(parents=True, exist_ok=True)
+    delta_path.write_text(
+        json.dumps({"since": datetime.now(UTC).isoformat()}),
+        encoding="utf-8",
+    )
 
 
 def _prompt_profile(choices: list[str]) -> str | None:
