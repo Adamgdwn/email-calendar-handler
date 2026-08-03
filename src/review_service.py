@@ -25,6 +25,7 @@ from src.memory.feedback_store import (
 from src.memory.rule_store import SupabaseRuleStore
 from src.memory.supabase_client import TableGateway
 from src.models.brief_models import FilingAcceptanceStats, FilingProposal
+from src.models.email_models import Classification
 from src.models.feedback_models import FeedbackDecision, FeedbackRecord
 from src.models.filing_models import FilingRuleStatus
 from src.models.persona_models import PersonaProfile
@@ -75,7 +76,7 @@ def run_review(
         lookback_hours=lookback_hours,
         now=now,
     )
-    records = _collect_feedback(ctx.account_id, ctx.moment, ctx.proposals, prompter)
+    records = _collect_feedback(ctx.account_id, ctx.moment, ctx.proposals, prompter, ctx.classified)
     feedback_recorded = record_feedback(gateway, records)
     all_feedback = load_feedback(gateway, ctx.account_id, target_type=FILING_TARGET_TYPE)
     changed = LearningAgent().run(ctx.account_id, all_feedback, ctx.rules)
@@ -103,6 +104,7 @@ def _collect_feedback(
     moment: datetime,
     proposals: list[FilingProposal],
     prompter: ReviewPrompter,
+    classified: dict[str, Classification],
 ) -> list[FeedbackRecord]:
     records: list[FeedbackRecord] = []
     for index, proposal in enumerate(proposals):
@@ -110,6 +112,8 @@ def _collect_feedback(
         if response.decision is None:
             continue
         final_path = response.modified_path or proposal.proposed_path
+        cls = classified.get(proposal.message_id)
+        method = "llm" if cls is not None and "method:llm" in cls.reasons else "deterministic"
         records.append(
             FeedbackRecord(
                 feedback_id=f"pending:{proposal.proposal_id}",
@@ -125,6 +129,7 @@ def _collect_feedback(
                     "path": "/".join(final_path),
                     "message_id": proposal.message_id,
                     "proposed_path": "/".join(proposal.proposed_path),
+                    "classification_method": method,
                 },
             )
         )

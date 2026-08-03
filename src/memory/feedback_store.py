@@ -61,6 +61,34 @@ def acceptance_stats(
     return FilingAcceptanceStats(total=len(records), accepted=accepted)
 
 
+def method_accuracy_stats(
+    gateway: TableGateway,
+    account_id: str,
+    *,
+    limit: int = 50,
+) -> tuple[float | None, float | None, int]:
+    """Acceptance rates for deterministic vs LLM-classified proposals (rolling N).
+
+    Returns (det_accept_rate, llm_accept_rate, total_with_method_tag).
+    Only counts feedback records that carry a classification_method tag — records
+    created before chunk 14 are silently excluded.
+    """
+    records = load_feedback(gateway, account_id, target_type=FILING_TARGET_TYPE)
+    recent = records[-limit:]
+    det = [r for r in recent if r.context.get("classification_method") == "deterministic"]
+    llm = [r for r in recent if r.context.get("classification_method") == "llm"]
+    total = len(det) + len(llm)
+    if total == 0:
+        return None, None, 0
+    det_rate = (
+        sum(1 for r in det if r.decision is FeedbackDecision.ACCEPT) / len(det) if det else None
+    )
+    llm_rate = (
+        sum(1 for r in llm if r.decision is FeedbackDecision.ACCEPT) / len(llm) if llm else None
+    )
+    return det_rate, llm_rate, total
+
+
 def _to_record(row: dict[str, Any]) -> FeedbackRecord:
     context_value = row.get("context")
     context = (

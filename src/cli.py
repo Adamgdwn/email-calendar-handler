@@ -26,6 +26,11 @@ from postgrest import APIError
 from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.agents.llm_classification_assist import (
+    LLM_ASSIST_DAILY_BUDGET_DEFAULT,
+    LLM_ASSIST_THRESHOLD_DEFAULT,
+    LLMAssistConfig,
+)
 from src.agents.response_agent import ResponseAgent
 from src.brief.renderer import render_brief
 from src.brief_service import (
@@ -85,6 +90,14 @@ class AnthropicSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ANTHROPIC_", env_file=".env", extra="ignore")
 
     api_key: str = Field(min_length=1)
+
+
+class LLMAssistSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="LLM_ASSIST_", env_file=".env", extra="ignore")
+
+    enabled: bool = Field(default=False)
+    confidence_threshold: float = Field(default=LLM_ASSIST_THRESHOLD_DEFAULT, ge=0.0, le=1.0)
+    daily_token_budget: int = Field(default=LLM_ASSIST_DAILY_BUDGET_DEFAULT, ge=0)
 
 
 class SyncTransport(Protocol):
@@ -361,6 +374,22 @@ def _run_brief(gateway_factory: GatewayFactory, *, profile: str | None, hours: i
         print(f"Configuration error: {exc}")
         return EXIT_CONFIG_ERROR
 
+    llm_assist_config: LLMAssistConfig | None = None
+    llm_assist_settings = _load_settings(LLMAssistSettings, env_prefix="LLM_ASSIST_")
+    if llm_assist_settings is not None and llm_assist_settings.enabled:
+        anthropic_settings = _load_settings(AnthropicSettings, env_prefix="ANTHROPIC_")
+        if anthropic_settings is None:
+            print(
+                "LLM_ASSIST_ENABLED=true but ANTHROPIC_API_KEY missing; running without LLM assist."
+            )
+        else:
+            llm_assist_config = LLMAssistConfig(
+                confidence_threshold=llm_assist_settings.confidence_threshold,
+                daily_token_budget=llm_assist_settings.daily_token_budget,
+                api_key=anthropic_settings.api_key,
+                budget_path=app_settings.inboxmind_home / "llm_assist_budget.json",
+            )
+
     gateway = gateway_factory(supabase_settings)
     _profile = profile
     try:
@@ -370,6 +399,7 @@ def _run_brief(gateway_factory: GatewayFactory, *, profile: str | None, hours: i
             personas=personas,
             profile_override=_profile,
             lookback_hours=hours,
+            llm_assist_config=llm_assist_config,
         )
     except PersonaSelectionError as exc:
         if _profile is not None:
@@ -386,6 +416,7 @@ def _run_brief(gateway_factory: GatewayFactory, *, profile: str | None, hours: i
                 personas=personas,
                 profile_override=_profile,
                 lookback_hours=hours,
+                llm_assist_config=llm_assist_config,
             )
         except PersonaSelectionError as exc2:
             print(f"Configuration error: {exc2}")

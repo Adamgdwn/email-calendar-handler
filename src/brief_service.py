@@ -16,14 +16,22 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from cryptography.fernet import InvalidToken
 from pydantic import ValidationError
 
+from src.agents.llm_classification_assist import LLMAssistConfig, LLMClassificationAssist
 from src.agents.supervisor import EmailSupervisor
+from src.llm.anthropic_client import AnthropicClient
 from src.memory.account_store import ACCOUNTS_TABLE, link_account_persona, persona_profile_id
 from src.memory.calendar_store import load_events
 from src.memory.email_store import EMAILS_TABLE
-from src.memory.feedback_store import acceptance_stats
+from src.memory.feedback_store import acceptance_stats, method_accuracy_stats
 from src.memory.rule_store import SupabaseRuleStore
 from src.memory.supabase_client import SupabaseStoreError, TableGateway
-from src.models.brief_models import URGENCY_ORDER, BriefThreadSummary, FilingProposal, MorningBrief
+from src.models.brief_models import (
+    URGENCY_ORDER,
+    BriefThreadSummary,
+    FilingProposal,
+    LLMAssistStats,
+    MorningBrief,
+)
 from src.models.calendar_models import CalendarEvent
 from src.models.email_models import (
     AccountContext,
@@ -35,6 +43,7 @@ from src.models.email_models import (
 )
 from src.models.filing_models import FilingRule
 from src.models.persona_models import PersonaProfile
+from src.utils.daily_token_budget import DailyTokenBudget
 from src.utils.encryption import FieldEncryptor
 
 AGENDA_LOOKBACK_DAYS = 7  # how far back a still-running multi-day event can start
@@ -75,6 +84,7 @@ class ProposalContext:
     previously_classified: int
     rules: list[FilingRule]
     proposals: list[FilingProposal]
+    llm_assist_count: int = 0
 
 
 def build_proposal_context(
@@ -85,6 +95,7 @@ def build_proposal_context(
     profile_override: str | None = None,
     lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
     now: datetime | None = None,
+    llm_assist_config: LLMAssistConfig | None = None,
 ) -> ProposalContext:
     """Load the account, classify (persisting once), and build filing proposals."""
     moment = (now or datetime.now(tz=UTC)).astimezone(UTC)
@@ -104,6 +115,18 @@ def build_proposal_context(
     classified: dict[str, Classification] = {}
     classified_now = 0
     previously_classified = 0
+    llm_assist_count = 0
+
+    llm_assist_agent: LLMClassificationAssist | None = None
+    llm_client: AnthropicClient | None = None
+    llm_budget: DailyTokenBudget | None = None
+    if llm_assist_config is not None:
+        llm_assist_agent = LLMClassificationAssist()
+        llm_client = AnthropicClient(llm_assist_config.api_key)
+        llm_budget = DailyTokenBudget(
+            llm_assist_config.budget_path, llm_assist_config.daily_token_budget
+        )
+
     for row in rows:
         email_id = str(row["id"])
         stored = _stored_classification(row)
@@ -111,10 +134,28 @@ def build_proposal_context(
             classified[email_id] = stored
             previously_classified += 1
             continue
-        classification = supervisor.classify(_classification_input(context, row, encryptor))
+        cls_input = _classification_input(context, row, encryptor)
+        classification = supervisor.classify(cls_input)
+
+        if (
+            llm_assist_config is not None
+            and llm_assist_agent is not None
+            and llm_client is not None
+            and llm_budget is not None
+            and classification.confidence_score < llm_assist_config.confidence_threshold
+            and llm_budget.remaining() > llm_assist_agent.max_response_tokens
+        ):
+            classification, tokens = llm_assist_agent.classify(
+                cls_input, llm_client, classification
+            )
+            if tokens > 0:
+                llm_budget.record(tokens)
+                llm_assist_count += 1
+
         _persist_classification(gateway, email_id, classification)
         classified[email_id] = classification
         classified_now += 1
+
     rules = SupabaseRuleStore(gateway).list_rules(account_id)
     proposals = _build_proposals(supervisor, account_id, rows, classified, rules)
     return ProposalContext(
@@ -129,6 +170,7 @@ def build_proposal_context(
         previously_classified=previously_classified,
         rules=rules,
         proposals=proposals,
+        llm_assist_count=llm_assist_count,
     )
 
 
@@ -140,6 +182,7 @@ def run_brief(
     profile_override: str | None = None,
     lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
     now: datetime | None = None,
+    llm_assist_config: LLMAssistConfig | None = None,
 ) -> MorningBrief:
     ctx = build_proposal_context(
         gateway=gateway,
@@ -148,6 +191,7 @@ def run_brief(
         profile_override=profile_override,
         lookback_hours=lookback_hours,
         now=now,
+        llm_assist_config=llm_assist_config,
     )
     events, attendee_emails = _agenda(
         gateway, ctx.account_id, ctx.moment, ctx.account_zone, str(ctx.account.get("primary_email"))
@@ -155,6 +199,22 @@ def run_brief(
     threads = _build_threads(
         ctx.rows, ctx.classified, ctx.persona.profile_id, ctx.account_zone, attendee_emails
     )
+
+    llm_assist: LLMAssistStats | None = None
+    if llm_assist_config is not None:
+        budget = DailyTokenBudget(
+            llm_assist_config.budget_path, llm_assist_config.daily_token_budget
+        )
+        det_rate, llm_rate, rolling_total = method_accuracy_stats(gateway, ctx.account_id)
+        llm_assist = LLMAssistStats(
+            enabled=True,
+            assisted_this_run=ctx.llm_assist_count,
+            tokens_used_today=budget.tokens_used_today(),
+            det_accept_rate=det_rate,
+            llm_accept_rate=llm_rate,
+            rolling_total=rolling_total,
+        )
+
     return MorningBrief(
         brief_date=ctx.moment.astimezone(ctx.account_zone).date(),
         account_email=str(ctx.account.get("primary_email")),
@@ -168,6 +228,7 @@ def run_brief(
         acceptance=acceptance_stats(gateway, ctx.account_id),
         classified_now=ctx.classified_now,
         previously_classified=ctx.previously_classified,
+        llm_assist=llm_assist,
     )
 
 

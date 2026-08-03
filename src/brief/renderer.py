@@ -10,6 +10,7 @@ from src.models.brief_models import (
     BriefThreadSummary,
     FilingAcceptanceStats,
     FilingProposal,
+    LLMAssistStats,
     MorningBrief,
 )
 from src.models.calendar_models import CalendarEvent
@@ -63,6 +64,8 @@ def render_brief(brief: MorningBrief) -> str:
         lines.extend(["No new mail in this window.", ""])
 
     lines.append(_acceptance_line(brief.acceptance))
+    if brief.llm_assist is not None and brief.llm_assist.enabled:
+        lines.append(_llm_assist_line(brief.llm_assist))
     lines.append("")
     return "\n".join(lines)
 
@@ -124,6 +127,18 @@ def _thread_line(thread: BriefThreadSummary) -> str:
     if thread.boost_reason:
         line += f" — {thread.boost_reason}"
     return line
+
+
+def _llm_assist_line(stats: LLMAssistStats) -> str:
+    parts = [
+        f"LLM assist: {stats.assisted_this_run} email(s) this run, "
+        f"{stats.tokens_used_today} tokens today."
+    ]
+    if stats.rolling_total > 0:
+        det = f"{stats.det_accept_rate:.0%}" if stats.det_accept_rate is not None else "n/a"
+        llm = f"{stats.llm_accept_rate:.0%}" if stats.llm_accept_rate is not None else "n/a"
+        parts.append(f"Accuracy rolling {stats.rolling_total}: det {det} / llm {llm}.")
+    return " ".join(parts)
 
 
 def _event_line(event: CalendarEvent) -> str:
