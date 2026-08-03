@@ -12,6 +12,7 @@ mailbox.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import getpass
 import json
 import os
@@ -123,6 +124,7 @@ class AppSettings(BaseSettings):
 
     encryption_key_base64: str = Field(min_length=1)
     inboxmind_home: Path = Field(default_factory=lambda: Path.home() / ".inboxmind")
+    inboxmind_accounts: str = Field(default="")
 
 
 class AnthropicSettings(BaseSettings):
@@ -450,7 +452,7 @@ def _run_sync(
     if account_alias:
         aliases: list[str | None] = [account_alias]
     else:
-        raw = os.environ.get("INBOXMIND_ACCOUNTS", "").strip()
+        raw = app_settings.inboxmind_accounts.strip()
         aliases = [a.strip() for a in raw.split(",") if a.strip()] if raw else [None]
 
     overall = EXIT_OK
@@ -1148,13 +1150,23 @@ def _run_check(
     if encryptor is None:
         return EXIT_CONFIG_ERROR
 
-    raw = os.environ.get("INBOXMIND_ACCOUNTS", "").strip()
+    raw = app_settings.inboxmind_accounts.strip()
     aliases: list[str | None] = [a.strip() for a in raw.split(",") if a.strip()] if raw else [None]
 
     gateway = gateway_factory(supabase_settings)
     consent_records = _read_consent_records(app_settings.inboxmind_home / CONSENT_LOG_FILENAME)
 
     for alias in aliases:
+        if alias and is_imap_account(alias, app_settings.inboxmind_home):
+            with contextlib.suppress(Exception):
+                _sync_imap_alias(
+                    alias,
+                    gateway_factory=gateway_factory,
+                    app_settings=app_settings,
+                    supabase_settings=supabase_settings,
+                    encryptor=encryptor,
+                )
+            continue
         cache_store = EncryptedTokenCache(
             app_settings.inboxmind_home / _token_cache_filename(alias), encryptor
         )
