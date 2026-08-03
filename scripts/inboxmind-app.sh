@@ -57,34 +57,43 @@ while true; do
   fi
 
   _inboxmind_home="${INBOXMIND_HOME:-$HOME/.inboxmind}"
-  _accts=""
+
+  printf "\n"
+  printf "  ┌────────────────────────────────────────────────┐\n"
+  printf "  │                  InboxMind                      │\n"
+  printf "  ├────────────────────────────────────────────────┤\n"
+  printf "  │  Accounts                                      │\n"
+  _any_accts=0
   for _f in "$_inboxmind_home"/account_*.email; do
     [ -f "$_f" ] || continue
-    _email=$(< "$_f")
-    _email="${_email%%$'\n'*}"
-    _accts="${_accts:+$_accts | }$_email"
+    _al=$(basename "$_f" .email | sed 's/^account_//')
+    _em=$(< "$_f"); _em="${_em%%$'\n'*}"
+    printf "  │  [+] %-14s  %-26s│\n" "${_al:0:14}" "${_em:0:26}"
+    _any_accts=1
   done
-  [ -z "$_accts" ] && _accts="(none connected — pick option 1)"
-  _accts_line=$(printf "  Accounts: %-36s" "${_accts:0:36}")
+  for _al in $(grep '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null \
+               | cut -d= -f2- | tr ',' '\n' | tr -d ' '); do
+    [ -z "$_al" ] && continue
+    [ -f "$_inboxmind_home/account_${_al}.email" ] && continue
+    printf "  │  [-] %-14s  %-26s│\n" "${_al:0:14}" "(not connected)"
+    _any_accts=1
+  done
+  if [ "$_any_accts" -eq 0 ]; then
+    printf "  │  (none)  Press A to add your first account     │\n"
+  fi
+  printf "  ├────────────────────────────────────────────────┤\n"
+  printf "  │  A  add / reconnect a mailbox                  │\n"
+  printf "  ├────────────────────────────────────────────────┤\n"
+  printf "  │  0  morning routine  sync + brief + review     │\n"
+  printf "  │  2  sync             pull new mail + calendar  │\n"
+  printf "  │  3  brief            today's Morning Brief     │\n"
+  printf "  │  4  review           accept / skip / reject    │\n"
+  printf "  │  5  open latest brief                          │\n"
+  printf "  │  6  audit            propose folder structure  │\n"
+  printf "  │  7  hourly check     [%-8s]                │\n" "$check_status"
+  printf "  │  q  quit                                       │\n"
+  printf "  └────────────────────────────────────────────────┘\n"
 
-  cat <<MENU
-
-  ┌────────────────────────────────────────────────┐
-  │                  InboxMind                      │
-  │${_accts_line}│
-  ├────────────────────────────────────────────────┤
-  │  0) morning routine  — sync + brief + review   │
-  ├────────────────────────────────────────────────┤
-  │  1) connect  — sign in to a mailbox (one-time) │
-  │  2) sync     — pull new mail + calendar        │
-  │  3) brief    — today's Morning Brief           │
-  │  4) review   — accept / modify / reject        │
-  │  5) open the latest brief file                 │
-  │  6) audit  — propose a better folder structure │
-  │  7) hourly check     [$check_status]           │
-  │  q) quit                                       │
-  └────────────────────────────────────────────────┘
-MENU
   read -rp "  choose: " choice
   case "$choice" in
     0)
@@ -95,33 +104,22 @@ MENU
       run brief || true
       run review || true
       ;;
-    1)
+    A|a|1)
       echo
-      echo "  Connected accounts (with sidecar email on file):"
-      _c=0
-      for _f in "$_inboxmind_home"/account_*.email; do
-        [ -f "$_f" ] || continue
-        _al=$(basename "$_f" .email | sed 's/^account_//')
-        _em=$(< "$_f"); _em="${_em%%$'\n'*}"
-        echo "    [$_al]  $_em"
-        _c=$((_c + 1))
-      done
-      [ "$_c" -eq 0 ] && echo "    (none yet)"
+      echo "  Sign-in opens a URL in your browser — no password is typed here."
+      echo "  Once connected, the account appears in the menu permanently."
+      echo
       _env_accts=$(grep '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null | cut -d= -f2- | tr ',' ' ')
-      if [ -n "$_env_accts" ]; then
-        echo
-        echo "  Configured aliases (in .env): $_env_accts"
-        echo "  Use one of these aliases when reconnecting an existing account."
-      fi
+      [ -n "$_env_accts" ] && echo "  Existing aliases: $_env_accts"
       echo
-      echo "  Sign-in opens a browser link — no password is typed here."
-      read -rp "  Email address to connect (e.g. user@hotmail.com — blank = reconnect default): " _new_email
+      read -rp "  Email address to connect (e.g. user@hotmail.com): " _new_email
       if [ -n "$_new_email" ]; then
-        # Derive alias from domain (user@hotmail.com → hotmail)
+        # Derive alias from email domain (user@hotmail.com -> hotmail)
         _domain="${_new_email#*@}"
         _new_alias="${_domain%%.*}"
-        _new_alias=$(printf '%s' "$_new_alias" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_' | sed 's/_*$//')
-        read -rp "  Save as alias '$_new_alias'? (enter to confirm, or type a new alias): " _confirm_alias
+        _new_alias=$(printf '%s' "$_new_alias" | tr '[:upper:]' '[:lower:]' \
+                     | tr -cs 'a-z0-9' '_' | sed 's/_*$//')
+        read -rp "  Internal alias '$_new_alias' — press enter to confirm, or type a different one: " _confirm_alias
         [ -n "$_confirm_alias" ] && _new_alias="$_confirm_alias"
         _current_accts=$(grep '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null | cut -d= -f2-)
         if ! echo "$_current_accts" | grep -qw "$_new_alias"; then
@@ -130,11 +128,11 @@ MENU
           else
             echo "INBOXMIND_ACCOUNTS=$_new_alias" >> "$REPO/.env"
           fi
-          echo "  Alias '$_new_alias' added to INBOXMIND_ACCOUNTS."
+          echo "  Alias '$_new_alias' added."
         fi
         run connect --account "$_new_alias" || true
       else
-        run connect || true
+        echo "  No email entered — nothing changed."
       fi
       ;;
     2) run sync || true ;;
