@@ -56,8 +56,15 @@ while true; do
     check_status="disabled"
   fi
 
-  _accts=$(grep '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null | cut -d= -f2- | tr ',' ' | ')
-  [ -z "$_accts" ] && _accts="(none configured — check .env)"
+  _inboxmind_home="${INBOXMIND_HOME:-$HOME/.inboxmind}"
+  _accts=""
+  for _f in "$_inboxmind_home"/account_*.email; do
+    [ -f "$_f" ] || continue
+    _email=$(< "$_f")
+    _email="${_email%%$'\n'*}"
+    _accts="${_accts:+$_accts | }$_email"
+  done
+  [ -z "$_accts" ] && _accts="(none connected — pick option 1)"
   _accts_line=$(printf "  Accounts: %-36s" "${_accts:0:36}")
 
   cat <<MENU
@@ -90,22 +97,34 @@ MENU
       ;;
     1)
       echo
-      echo "  Configured accounts: ${_accts:-"(none — check .env)"}"
-      echo "  Existing aliases: $(ls "$REPO/src/personas/"*.yaml 2>/dev/null | xargs -I{} basename {} .yaml | tr '\n' ' ')"
+      echo "  Connected accounts:"
+      _c=0
+      for _f in "$_inboxmind_home"/account_*.email; do
+        [ -f "$_f" ] || continue
+        _al=$(basename "$_f" .email | sed 's/^account_//')
+        _em=$(< "$_f"); _em="${_em%%$'\n'*}"
+        echo "    $_al → $_em"
+        _c=$((_c + 1))
+      done
+      [ "$_c" -eq 0 ] && echo "    (none yet)"
       echo
-      read -rp "  Account alias to connect (e.g. outlook_work, hotmail — blank = default): " _new_alias
-      if [ -n "$_new_alias" ]; then
+      echo "  Sign-in opens a browser link — no password is typed here."
+      read -rp "  Email address to connect (e.g. user@hotmail.com — blank = reconnect default): " _new_email
+      if [ -n "$_new_email" ]; then
+        # Derive alias from domain (user@hotmail.com → hotmail)
+        _domain="${_new_email#*@}"
+        _new_alias="${_domain%%.*}"
+        _new_alias=$(printf '%s' "$_new_alias" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '_' | sed 's/_*$//')
+        read -rp "  Save as alias '$_new_alias'? (enter to confirm, or type a new alias): " _confirm_alias
+        [ -n "$_confirm_alias" ] && _new_alias="$_confirm_alias"
         _current_accts=$(grep '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null | cut -d= -f2-)
         if ! echo "$_current_accts" | grep -qw "$_new_alias"; then
-          read -rp "  Add '$_new_alias' to INBOXMIND_ACCOUNTS in .env? [Y/n]: " _add_env
-          if [[ ! "$_add_env" =~ ^[nN]$ ]]; then
-            if grep -q '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null; then
-              sed -i "s/^INBOXMIND_ACCOUNTS=.*/INBOXMIND_ACCOUNTS=${_current_accts:+$_current_accts,}$_new_alias/" "$REPO/.env"
-            else
-              echo "INBOXMIND_ACCOUNTS=$_new_alias" >> "$REPO/.env"
-            fi
-            echo "  Added '$_new_alias' to INBOXMIND_ACCOUNTS."
+          if grep -q '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null; then
+            sed -i "s/^INBOXMIND_ACCOUNTS=.*/INBOXMIND_ACCOUNTS=${_current_accts:+$_current_accts,}$_new_alias/" "$REPO/.env"
+          else
+            echo "INBOXMIND_ACCOUNTS=$_new_alias" >> "$REPO/.env"
           fi
+          echo "  Alias '$_new_alias' added to INBOXMIND_ACCOUNTS."
         fi
         run connect --account "$_new_alias" || true
       else

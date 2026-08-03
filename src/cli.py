@@ -331,6 +331,12 @@ def _run_connect(client_factory: ClientFactory, *, account_alias: str | None = N
     consent_path = app_settings.inboxmind_home / CONSENT_LOG_FILENAME
     _append_consent_record(consent_path, record)
 
+    # Write plaintext email sidecar so the launcher menu can display connected addresses.
+    sidecar_name = f"account_{account_alias}.email" if account_alias else "account_default.email"
+    sidecar_path = app_settings.inboxmind_home / sidecar_name
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+    sidecar_path.write_text(token.subject + "\n", encoding="utf-8")
+
     source = "cached token" if token.from_cache else "device-code sign-in"
     account_type = token.account_type or "unknown account type"
     print(f"Connected as {token.subject} ({account_type}) via {source}.")
