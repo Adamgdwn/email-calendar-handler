@@ -1,6 +1,6 @@
 # Production Instructions
 
-Last Updated: 2026-08-02 (chunk 14 promoted to required; chunks 15-16 scoped)
+Last Updated: 2026-08-03 (chunk 15 delivered; chunk 16 is next)
 
 Use this document as the single restart point after clearing the context window.
 When the user says "carry on with chunk N", load this file first, then execute
@@ -429,6 +429,8 @@ Done criteria:
 
 ### Chunk 15: Multiple Accounts — All Inboxes
 
+Status: delivered 2026-08-03 (committed straight to `main`).
+
 Goal: read all of Adam's inboxes (Red Deer, Guided AI Labs, Shaw, and any
 others) in a single morning brief. Each account runs through its own persona
 (professional / leadership / relaxed) with no cross-account persona bleed.
@@ -514,30 +516,7 @@ Phase 4.
 
 ## Current Recommendation
 
-Chunk 13 (Inbox Audit) is in progress — untracked source files exist in
-`src/inbox_audit/` and `src/models/audit_models.py`. To continue:
-
-```text
-Carry on with chunk 13.
-```
-
-After chunk 13, continue in order:
-
-```text
-Carry on with chunk 14.
-```
-
-LLM classification assist — now required (promoted from optional). Bridges the
-day-1 classification quality gap before the learning loop has accumulated enough
-feedback to make keyword-only classification reliable.
-
-```text
-Carry on with chunk 15.
-```
-
-Multiple accounts — all inboxes in a single brief, each with its own persona
-tone. Red Deer (professional), Guided AI Labs (leadership), Shaw (relaxed).
-Prove the pattern with multiple Outlook accounts before Phase 2 adds Gmail.
+Chunks 0–15 are delivered. Next:
 
 ```text
 Carry on with chunk 16.
