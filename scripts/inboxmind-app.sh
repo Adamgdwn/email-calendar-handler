@@ -56,10 +56,15 @@ while true; do
     check_status="disabled"
   fi
 
+  _accts=$(grep '^INBOXMIND_ACCOUNTS=' "$REPO/.env" 2>/dev/null | cut -d= -f2- | tr ',' ' | ')
+  [ -z "$_accts" ] && _accts="(none configured — check .env)"
+  _accts_line=$(printf "  Accounts: %-36s" "${_accts:0:36}")
+
   cat <<MENU
 
   ┌────────────────────────────────────────────────┐
   │                  InboxMind                      │
+  │${_accts_line}│
   ├────────────────────────────────────────────────┤
   │  0) morning routine  — sync + brief + review   │
   ├────────────────────────────────────────────────┤
