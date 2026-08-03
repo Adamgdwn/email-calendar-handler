@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 from collections.abc import Callable, Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -60,7 +61,7 @@ from src.memory.supabase_client import SupabaseSettings, TableGateway, build_tab
 from src.models.audit_models import AuditReport
 from src.models.auth_models import OAuthConsentRecord
 from src.models.brief_models import FilingProposal
-from src.models.email_models import Provider
+from src.models.email_models import Provider, UrgencyBand
 from src.models.feedback_models import FeedbackDecision
 from src.models.persona_models import DraftRequest, DraftResponse, ThreadMessage
 from src.personas.loader import PersonaLoadError, load_personas
@@ -70,6 +71,8 @@ from src.utils.encryption import FieldEncryptor
 
 TOKEN_CACHE_FILENAME = "graph_token_cache.enc"  # noqa: S105 - filename, not a secret
 CONSENT_LOG_FILENAME = "consent_log.jsonl"
+CHECK_NOTIFIED_FILENAME = "check_notified.txt"
+CHECK_WINDOW_HOURS = 1
 
 
 def _token_cache_filename(alias: str | None) -> str:
@@ -88,6 +91,20 @@ DRAFT_THREAD_COLUMNS = "id,thread_id,sender_email,subject,body_ciphertext,messag
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_CONFIG_ERROR = 2
+
+
+class CheckNotifier(Protocol):
+    def notify(self, subjects: list[str]) -> None: ...
+
+
+class DesktopNotifier:
+    def notify(self, subjects: list[str]) -> None:
+        count = len(subjects)
+        summary = f"InboxMind — {count} CRITICAL item(s)"
+        lines = "\n".join(f"• {s[:80]}" for s in subjects[:5])
+        if count > 5:
+            lines += f"\n… and {count - 5} more"
+        subprocess.run(["notify-send", "--urgency=critical", summary, lines], check=False)  # noqa: S603, S607
 
 
 class AppSettings(BaseSettings):
@@ -127,6 +144,7 @@ def main(
     client_factory: ClientFactory = build_msal_client,
     gateway_factory: GatewayFactory = build_table_gateway,
     transport_factory: TransportFactory = HttpxGraphTransport,
+    notifier: CheckNotifier | None = None,
 ) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -153,6 +171,13 @@ def main(
         )
     if args.command == "audit":
         return _run_audit(client_factory, transport_factory, months=args.months)
+    if args.command == "check":
+        return _run_check(
+            client_factory,
+            gateway_factory,
+            transport_factory,
+            notifier=notifier or DesktopNotifier(),
+        )
     parser.error(f"unknown command: {args.command}")
 
 
@@ -251,6 +276,13 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=12,
         help="Scan messages from the last N months (default 12).",
+    )
+    subparsers.add_parser(
+        "check",
+        help=(
+            "Sync recent mail and emit a desktop notification if CRITICAL items are found. "
+            "Designed for the hourly systemd timer; exits silently with 0 when nothing is urgent."
+        ),
     )
     return parser
 
@@ -909,6 +941,101 @@ def _print_settings_errors(exc: ValidationError, *, env_prefix: str) -> None:
         location = error["loc"]
         field = str(location[0]) if location else "unknown"
         print(f"  - {env_prefix}{field.upper()}: {error['msg']}")
+
+
+def _run_check(
+    client_factory: ClientFactory,
+    gateway_factory: GatewayFactory,
+    transport_factory: TransportFactory,
+    *,
+    notifier: CheckNotifier,
+) -> int:
+    """Sync recent mail and notify via desktop if new CRITICAL items are found.
+
+    Silent on success; always exits 0 so the systemd timer log stays clean.
+    Errors during sync are swallowed per-alias so one failed account doesn't
+    block notification for the others.
+    """
+    app_settings = _load_settings(AppSettings, env_prefix="")
+    if app_settings is None:
+        return EXIT_CONFIG_ERROR
+    graph_settings = _load_settings(MicrosoftGraphOAuthSettings, env_prefix="MICROSOFT_")
+    if graph_settings is None:
+        return EXIT_CONFIG_ERROR
+    supabase_settings = _load_settings(SupabaseSettings, env_prefix="SUPABASE_")
+    if supabase_settings is None:
+        return EXIT_CONFIG_ERROR
+    encryptor = _build_encryptor(app_settings)
+    if encryptor is None:
+        return EXIT_CONFIG_ERROR
+
+    raw = os.environ.get("INBOXMIND_ACCOUNTS", "").strip()
+    aliases: list[str | None] = [a.strip() for a in raw.split(",") if a.strip()] if raw else [None]
+
+    gateway = gateway_factory(supabase_settings)
+    consent_records = _read_consent_records(app_settings.inboxmind_home / CONSENT_LOG_FILENAME)
+
+    for alias in aliases:
+        cache_store = EncryptedTokenCache(
+            app_settings.inboxmind_home / _token_cache_filename(alias), encryptor
+        )
+        authenticator = GraphAuthenticator(graph_settings, cache_store, client_factory)
+        token = authenticator.acquire_cached_token()
+        if token is None:
+            continue
+        transport = transport_factory()
+        try:
+            run_sync(
+                token=token,
+                transport=transport,
+                gateway=gateway,
+                encryptor=encryptor,
+                consent_records=consent_records,
+                calendar_days=1,
+            )
+        except (GraphAuthError, GraphTransportError, GraphCalendarError, APIError, httpx.HTTPError):
+            pass
+        finally:
+            transport.close()
+
+    notified_path = app_settings.inboxmind_home / CHECK_NOTIFIED_FILENAME
+    already_notified = _load_notified_ids(notified_path)
+    cutoff = (datetime.now(UTC) - timedelta(hours=CHECK_WINDOW_HOURS)).isoformat()
+    rows = gateway.select_rows(
+        EMAILS_TABLE,
+        "id,subject,urgency",
+        eq={},
+        gte=("message_timestamp", cutoff),
+    )
+
+    new_subjects: list[str] = []
+    new_ids: list[str] = []
+    for row in rows:
+        if str(row.get("urgency")) == UrgencyBand.CRITICAL.value:
+            msg_id = str(row["id"])
+            if msg_id not in already_notified:
+                new_subjects.append(str(row.get("subject") or "(no subject)"))
+                new_ids.append(msg_id)
+
+    if new_subjects:
+        notifier.notify(new_subjects)
+        _append_notified_ids(notified_path, new_ids)
+
+    return EXIT_OK
+
+
+def _load_notified_ids(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    return {line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()}
+
+
+def _append_notified_ids(path: Path, ids: list[str]) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+        for msg_id in ids:
+            handle.write(msg_id + "\n")
 
 
 def _read_consent_records(path: Path) -> list[OAuthConsentRecord]:

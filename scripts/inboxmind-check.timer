@@ -1,0 +1,13 @@
+# InboxMind hourly CRITICAL-mail check timer.
+# Installed to ~/.config/systemd/user/inboxmind-check.timer by
+# scripts/install-check-timer.sh
+[Unit]
+Description=Run InboxMind hourly CRITICAL mail check every hour
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+Unit=inboxmind-check.service
+
+[Install]
+WantedBy=timers.target

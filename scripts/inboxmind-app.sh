@@ -49,7 +49,14 @@ fi
 
 # Interactive menu mode.
 while true; do
-  cat <<'MENU'
+  # Determine hourly-check status for the menu label.
+  if systemctl --user is-active --quiet inboxmind-check.timer 2>/dev/null; then
+    check_status="ENABLED"
+  else
+    check_status="disabled"
+  fi
+
+  cat <<MENU
 
   ┌────────────────────────────────────────────────┐
   │                  InboxMind                      │
@@ -62,6 +69,7 @@ while true; do
   │  4) review   — accept / modify / reject        │
   │  5) open the latest brief file                 │
   │  6) audit  — propose a better folder structure │
+  │  7) hourly check     [$check_status]           │
   │  q) quit                                       │
   └────────────────────────────────────────────────┘
 MENU
@@ -85,6 +93,25 @@ MENU
       else echo "  No brief file yet — run 'brief' first."; fi
       ;;
     6) run audit || true ;;
+    7)
+      if systemctl --user is-active --quiet inboxmind-check.timer 2>/dev/null; then
+        read -rp "  Hourly check is ENABLED. Disable it? [y/N]: " confirm
+        if [[ "$confirm" =~ ^[yY]$ ]]; then
+          systemctl --user disable --now inboxmind-check.timer
+          echo "  Hourly CRITICAL check disabled."
+        fi
+      else
+        read -rp "  Hourly check is disabled. Enable it? [y/N]: " confirm
+        if [[ "$confirm" =~ ^[yY]$ ]]; then
+          if systemctl --user list-unit-files inboxmind-check.timer &>/dev/null 2>&1; then
+            systemctl --user enable --now inboxmind-check.timer
+            echo "  Hourly CRITICAL check enabled."
+          else
+            echo "  Timer not installed yet. Run: bash scripts/install-check-timer.sh"
+          fi
+        fi
+      fi
+      ;;
     q|Q) exit 0 ;;
     *) echo "  Unrecognized choice." ;;
   esac
