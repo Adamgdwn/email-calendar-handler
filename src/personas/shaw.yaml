@@ -1,0 +1,12 @@
+profile_id: shaw
+display_name: Shaw (Personal)
+tone: relaxed_friendly_personal
+urgency_definitions:
+  critical: ["payment due", "account suspended", "action required", "overdue", "final notice"]
+  high: ["deadline", "appointment", "confirm", "rsvp", "registration"]
+  normal: ["hello", "catching up", "newsletter", "receipt", "order"]
+filing_taxonomy: personal.yaml
+response_constraints:
+  - "Use warm, casual language — no formal salutations needed"
+  - "Keep replies brief and friendly"
+  - "Do not share personal financial details or account numbers"

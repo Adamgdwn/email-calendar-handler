@@ -1,0 +1,12 @@
+profile_id: red_deer
+display_name: Red Deer
+tone: professional_direct_civic
+urgency_definitions:
+  critical: ["council deadline", "bylaw", "budget approval", "emergency", "legal notice", "board"]
+  high: ["committee", "public hearing", "report due", "media", "stakeholder", "rfp"]
+  normal: ["update", "agenda", "minutes", "correspondence", "meeting"]
+filing_taxonomy: municipal.yaml
+response_constraints:
+  - "Use formal, precise language suitable for public record"
+  - "Do not commit to timelines or budgets without explicit authorization"
+  - "Keep responses concise and action-oriented"

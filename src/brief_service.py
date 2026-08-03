@@ -31,6 +31,7 @@ from src.models.brief_models import (
     FilingProposal,
     LLMAssistStats,
     MorningBrief,
+    MultiBrief,
 )
 from src.models.calendar_models import CalendarEvent
 from src.models.email_models import (
@@ -96,10 +97,15 @@ def build_proposal_context(
     lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
     now: datetime | None = None,
     llm_assist_config: LLMAssistConfig | None = None,
+    account_id: str | None = None,
 ) -> ProposalContext:
-    """Load the account, classify (persisting once), and build filing proposals."""
+    """Load the account, classify (persisting once), and build filing proposals.
+
+    When account_id is given, loads that specific account (for multi-account loops).
+    When omitted, loads the single configured account and raises on 0 or 2+.
+    """
     moment = (now or datetime.now(tz=UTC)).astimezone(UTC)
-    account = _load_single_account(gateway)
+    account = _load_single_account(gateway, account_id=account_id)
     account_id = str(account["id"])
     persona = _resolve_persona(gateway, account, personas, profile_override)
     account_zone = _account_zone(str(account.get("timezone") or "UTC"))
@@ -232,15 +238,130 @@ def run_brief(
     )
 
 
-def _load_single_account(gateway: TableGateway) -> dict[str, Any]:
+def run_multi_brief(
+    *,
+    gateway: TableGateway,
+    encryptor: FieldEncryptor,
+    personas: dict[str, PersonaProfile],
+    profile_override: str | None = None,
+    lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
+    now: datetime | None = None,
+    llm_assist_config: LLMAssistConfig | None = None,
+) -> MultiBrief:
+    """Build a brief covering all configured accounts.
+
+    Single account: wraps the same logic as run_brief.
+    Multiple accounts: each section uses its own account's persona; accounts with
+    no persona linked are skipped (warning printed) unless there is only one account,
+    in which case PersonaSelectionError propagates so the CLI can prompt.
+    """
+    moment = (now or datetime.now(tz=UTC)).astimezone(UTC)
+    all_accounts = _load_all_accounts(gateway)
+
+    sections: list[MorningBrief] = []
+    for account in all_accounts:
+        a_id = str(account["id"])
+        try:
+            ctx = build_proposal_context(
+                gateway=gateway,
+                encryptor=encryptor,
+                personas=personas,
+                profile_override=profile_override,
+                lookback_hours=lookback_hours,
+                now=moment,
+                llm_assist_config=llm_assist_config,
+                account_id=a_id,
+            )
+        except PersonaSelectionError:
+            if len(all_accounts) == 1:
+                raise  # single account — let CLI prompt for profile
+            email = str(account.get("primary_email", "unknown"))
+            print(f"Skipping {email}: no persona linked. Run `inboxmind brief --profile <id>`.")
+            continue
+
+        events, attendee_emails = _agenda(
+            gateway,
+            ctx.account_id,
+            ctx.moment,
+            ctx.account_zone,
+            str(ctx.account.get("primary_email")),
+        )
+        threads = _build_threads(
+            ctx.rows, ctx.classified, ctx.persona.profile_id, ctx.account_zone, attendee_emails
+        )
+
+        llm_assist: LLMAssistStats | None = None
+        if llm_assist_config is not None:
+            budget = DailyTokenBudget(
+                llm_assist_config.budget_path, llm_assist_config.daily_token_budget
+            )
+            det_rate, llm_rate, rolling_total = method_accuracy_stats(gateway, ctx.account_id)
+            llm_assist = LLMAssistStats(
+                enabled=True,
+                assisted_this_run=ctx.llm_assist_count,
+                tokens_used_today=budget.tokens_used_today(),
+                det_accept_rate=det_rate,
+                llm_accept_rate=llm_rate,
+                rolling_total=rolling_total,
+            )
+
+        sections.append(
+            MorningBrief(
+                brief_date=ctx.moment.astimezone(ctx.account_zone).date(),
+                account_email=str(ctx.account.get("primary_email")),
+                profile_id=ctx.persona.profile_id,
+                persona_display_name=ctx.persona.display_name,
+                lookback_hours=lookback_hours,
+                generated_at=ctx.moment.astimezone(ctx.account_zone),
+                events=events,
+                threads=threads,
+                proposals=ctx.proposals,
+                acceptance=acceptance_stats(gateway, ctx.account_id),
+                classified_now=ctx.classified_now,
+                previously_classified=ctx.previously_classified,
+                llm_assist=llm_assist,
+            )
+        )
+
+    if not sections:
+        msg = "No accounts have a persona linked. Run `inboxmind brief --profile <id>` to link one."
+        raise PersonaSelectionError(msg)
+
+    first_zone = _account_zone(str(all_accounts[0].get("timezone") or "UTC"))
+    return MultiBrief(
+        brief_date=moment.astimezone(first_zone).date(),
+        generated_at=moment,
+        lookback_hours=lookback_hours,
+        sections=sections,
+    )
+
+
+def _load_single_account(gateway: TableGateway, *, account_id: str | None = None) -> dict[str, Any]:
+    if account_id is not None:
+        rows = gateway.select_rows(ACCOUNTS_TABLE, ACCOUNT_COLUMNS, eq={"id": account_id})
+        if not rows:
+            msg = f"Account {account_id!r} not found in Supabase."
+            raise BriefDataError(msg)
+        return rows[0]
     rows = gateway.select_rows(ACCOUNTS_TABLE, ACCOUNT_COLUMNS, eq={})
     if not rows:
         msg = "No synced account found. Run `inboxmind connect` then `inboxmind sync` first."
         raise BriefDataError(msg)
     if len(rows) > 1:
-        msg = "Multiple accounts found; the Morning Brief handles one account in this milestone."
+        msg = (
+            "Multiple accounts found; this command operates on one account at a time. "
+            "Run `inboxmind brief` to see all accounts."
+        )
         raise BriefDataError(msg)
     return rows[0]
+
+
+def _load_all_accounts(gateway: TableGateway) -> list[dict[str, Any]]:
+    rows = gateway.select_rows(ACCOUNTS_TABLE, ACCOUNT_COLUMNS, eq={})
+    if not rows:
+        msg = "No synced account found. Run `inboxmind connect` then `inboxmind sync` first."
+        raise BriefDataError(msg)
+    return rows
 
 
 def _resolve_persona(

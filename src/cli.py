@@ -1,11 +1,9 @@
 """InboxMind command-line interface.
 
-Chunk 13 surface: `inboxmind connect`, `inboxmind sync` (mail plus a
-read-only calendar window), `inboxmind brief` (agenda-first triage),
-`inboxmind review` (accept/modify/reject filing proposals),
-`inboxmind draft` (persona-toned reply drafts for terminal review only), and
-`inboxmind audit` (folder-tree scan → deterministic clustering → proposed
-filing hierarchy written to INBOXMIND_HOME/audits/).
+Chunk 15 surface: all commands from chunks 7-14 plus multi-account support.
+`connect --account <alias>` and `sync --account <alias>` target a specific
+account; `sync` with no alias iterates all accounts listed in INBOXMIND_ACCOUNTS.
+`brief` renders all accounts in one brief, each with its own persona tone.
 Every command is read-only against the mailbox; connect requires an explicit
 human yes before any sign-in; draft and audit output is never written to the
 mailbox.
@@ -32,13 +30,13 @@ from src.agents.llm_classification_assist import (
     LLMAssistConfig,
 )
 from src.agents.response_agent import ResponseAgent
-from src.brief.renderer import render_brief
+from src.brief.renderer import render_multi_brief
 from src.brief_service import (
     ACCOUNT_COLUMNS,
     DEFAULT_LOOKBACK_HOURS,
     BriefDataError,
     PersonaSelectionError,
-    run_brief,
+    run_multi_brief,
 )
 from src.inbox_audit.audit_renderer import render_audit_report
 from src.inbox_audit.audit_synthesizer import AuditSynthesisError, AuditSynthesizer
@@ -72,6 +70,19 @@ from src.utils.encryption import FieldEncryptor
 
 TOKEN_CACHE_FILENAME = "graph_token_cache.enc"  # noqa: S105 - filename, not a secret
 CONSENT_LOG_FILENAME = "consent_log.jsonl"
+
+
+def _token_cache_filename(alias: str | None) -> str:
+    """Return the encrypted token cache filename for the given account alias.
+
+    No alias → backward-compatible single-account filename.
+    With alias → account-scoped name so multiple accounts coexist.
+    """
+    if alias:
+        return f"graph_token_cache_{alias}.enc"  # noqa: S105 - filename, not a secret
+    return TOKEN_CACHE_FILENAME
+
+
 DRAFT_THREAD_COLUMNS = "id,thread_id,sender_email,subject,body_ciphertext,message_timestamp"
 
 EXIT_OK = 0
@@ -120,10 +131,14 @@ def main(
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "connect":
-        return _run_connect(client_factory)
+        return _run_connect(client_factory, account_alias=args.account_alias)
     if args.command == "sync":
         return _run_sync(
-            client_factory, gateway_factory, transport_factory, calendar_days=args.calendar_days
+            client_factory,
+            gateway_factory,
+            transport_factory,
+            account_alias=args.account_alias,
+            calendar_days=args.calendar_days,
         )
     if args.command == "brief":
         return _run_brief(gateway_factory, profile=args.profile, hours=args.hours)
@@ -147,13 +162,28 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Human-approved email and calendar intelligence.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser(
+    connect_parser = subparsers.add_parser(
         "connect",
         help="Sign in to Microsoft Graph with read-only scopes via device-code flow.",
+    )
+    connect_parser.add_argument(
+        "--account",
+        dest="account_alias",
+        default=None,
+        metavar="ALIAS",
+        help="Account alias for multi-account setups (e.g. guided_ai_labs). "
+        "Uses a dedicated token cache when given.",
     )
     sync_parser = subparsers.add_parser(
         "sync",
         help="Pull mailbox changes and a calendar window into encrypted Supabase storage.",
+    )
+    sync_parser.add_argument(
+        "--account",
+        dest="account_alias",
+        default=None,
+        metavar="ALIAS",
+        help="Sync a specific account alias. Omit to sync all accounts in INBOXMIND_ACCOUNTS.",
     )
     sync_parser.add_argument(
         "--calendar-days",
@@ -225,7 +255,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_connect(client_factory: ClientFactory) -> int:
+def _run_connect(client_factory: ClientFactory, *, account_alias: str | None = None) -> int:
     app_settings = _load_settings(AppSettings, env_prefix="")
     if app_settings is None:
         return EXIT_CONFIG_ERROR
@@ -236,7 +266,8 @@ def _run_connect(client_factory: ClientFactory) -> int:
     if encryptor is None:
         return EXIT_CONFIG_ERROR
 
-    print("InboxMind will connect to Microsoft Graph with READ-ONLY scopes:")
+    alias_label = f" [{account_alias}]" if account_alias else ""
+    print(f"InboxMind{alias_label} will connect to Microsoft Graph with READ-ONLY scopes:")
     for scope in graph_settings.scopes:
         print(f"  - {scope}")
     print(f"Tenant: {graph_settings.tenant_id}")
@@ -246,7 +277,9 @@ def _run_connect(client_factory: ClientFactory) -> int:
         print("Aborted; nothing was connected.")
         return EXIT_FAILURE
 
-    cache_store = EncryptedTokenCache(app_settings.inboxmind_home / TOKEN_CACHE_FILENAME, encryptor)
+    cache_store = EncryptedTokenCache(
+        app_settings.inboxmind_home / _token_cache_filename(account_alias), encryptor
+    )
     authenticator = GraphAuthenticator(graph_settings, cache_store, client_factory)
     try:
         token = authenticator.acquire_token(_print_device_prompt)
@@ -278,6 +311,7 @@ def _run_sync(
     gateway_factory: GatewayFactory,
     transport_factory: TransportFactory,
     *,
+    account_alias: str | None = None,
     calendar_days: int,
 ) -> int:
     if calendar_days < 1:
@@ -296,11 +330,51 @@ def _run_sync(
     if encryptor is None:
         return EXIT_CONFIG_ERROR
 
-    cache_store = EncryptedTokenCache(app_settings.inboxmind_home / TOKEN_CACHE_FILENAME, encryptor)
+    # Determine which account aliases to sync
+    if account_alias:
+        aliases: list[str | None] = [account_alias]
+    else:
+        raw = os.environ.get("INBOXMIND_ACCOUNTS", "").strip()
+        aliases = [a.strip() for a in raw.split(",") if a.strip()] if raw else [None]
+
+    overall = EXIT_OK
+    for alias in aliases:
+        result = _sync_alias(
+            alias,
+            client_factory=client_factory,
+            gateway_factory=gateway_factory,
+            transport_factory=transport_factory,
+            app_settings=app_settings,
+            graph_settings=graph_settings,
+            supabase_settings=supabase_settings,
+            encryptor=encryptor,
+            calendar_days=calendar_days,
+        )
+        if result != EXIT_OK:
+            overall = result
+    return overall
+
+
+def _sync_alias(
+    alias: str | None,
+    *,
+    client_factory: ClientFactory,
+    gateway_factory: GatewayFactory,
+    transport_factory: TransportFactory,
+    app_settings: AppSettings,
+    graph_settings: MicrosoftGraphOAuthSettings,
+    supabase_settings: SupabaseSettings,
+    encryptor: FieldEncryptor,
+    calendar_days: int,
+) -> int:
+    cache_store = EncryptedTokenCache(
+        app_settings.inboxmind_home / _token_cache_filename(alias), encryptor
+    )
     authenticator = GraphAuthenticator(graph_settings, cache_store, client_factory)
     token = authenticator.acquire_cached_token()
     if token is None:
-        print("No cached sign-in found. Run `inboxmind connect` first.")
+        alias_hint = f" --account {alias}" if alias else ""
+        print(f"No cached sign-in found. Run `inboxmind connect{alias_hint}` first.")
         return EXIT_FAILURE
 
     consent_records = _read_consent_records(app_settings.inboxmind_home / CONSENT_LOG_FILENAME)
@@ -393,7 +467,7 @@ def _run_brief(gateway_factory: GatewayFactory, *, profile: str | None, hours: i
     gateway = gateway_factory(supabase_settings)
     _profile = profile
     try:
-        brief = run_brief(
+        multi_brief = run_multi_brief(
             gateway=gateway,
             encryptor=encryptor,
             personas=personas,
@@ -410,7 +484,7 @@ def _run_brief(gateway_factory: GatewayFactory, *, profile: str | None, hours: i
         if _profile is None:
             return EXIT_CONFIG_ERROR
         try:
-            brief = run_brief(
+            multi_brief = run_multi_brief(
                 gateway=gateway,
                 encryptor=encryptor,
                 personas=personas,
@@ -441,9 +515,9 @@ def _run_brief(gateway_factory: GatewayFactory, *, profile: str | None, hours: i
     except httpx.HTTPError as exc:
         print(f"Brief failed reaching Supabase: {exc!r}")
         return EXIT_FAILURE
-    markdown = render_brief(brief)
+    markdown = render_multi_brief(multi_brief)
     print(markdown)
-    path = _write_brief_file(app_settings.inboxmind_home, brief.brief_date, markdown)
+    path = _write_brief_file(app_settings.inboxmind_home, multi_brief.brief_date, markdown)
     print(f"Brief written to {path}")
     return EXIT_OK
 

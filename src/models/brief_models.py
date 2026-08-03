@@ -68,6 +68,23 @@ class LLMAssistStats(BaseModel):
     rolling_total: int = Field(default=0, ge=0)
 
 
+class MultiBrief(BaseModel):
+    """Brief covering all configured accounts; each section is one MorningBrief."""
+
+    brief_date: date
+    generated_at: datetime
+    lookback_hours: int = Field(ge=1)
+    sections: list[MorningBrief] = Field(default_factory=list)
+
+    @field_validator("generated_at")
+    @classmethod
+    def generated_at_must_be_timezone_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            msg = "generated_at must be timezone-aware"
+            raise ValueError(msg)
+        return value
+
+
 class MorningBrief(BaseModel):
     brief_date: date
     account_email: str

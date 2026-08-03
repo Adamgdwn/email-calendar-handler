@@ -1,0 +1,12 @@
+profile_id: guided_ai_labs
+display_name: Guided AI Labs
+tone: leadership_strategic_forward_looking
+urgency_definitions:
+  critical: ["investor", "product launch", "partnership deadline", "team blocker", "revenue", "funding"]
+  high: ["roadmap", "hiring", "client", "demo", "sprint", "delivery", "proposal"]
+  normal: ["update", "research", "feedback", "planning", "sync", "standup"]
+filing_taxonomy: startup.yaml
+response_constraints:
+  - "Lead with strategic intent before tactical detail"
+  - "Do not commit to pricing, equity, or terms without explicit review"
+  - "Keep stakeholder communication candid and forward-looking"

@@ -11,7 +11,15 @@ from src.personas.loader import PersonaLoadError, load_personas
 def test_loads_all_repo_personas() -> None:
     personas = load_personas()
 
-    assert set(personas) == {"city_council", "consulting", "habitat", "prime_boilers"}
+    assert set(personas) == {
+        "city_council",
+        "consulting",
+        "guided_ai_labs",
+        "habitat",
+        "prime_boilers",
+        "red_deer",
+        "shaw",
+    }
     consulting = personas["consulting"]
     assert consulting.display_name == "Consulting"
     assert "contract deadline" in consulting.urgency_definitions[UrgencyBand.CRITICAL]

@@ -12,6 +12,7 @@ from src.models.brief_models import (
     FilingProposal,
     LLMAssistStats,
     MorningBrief,
+    MultiBrief,
 )
 from src.models.calendar_models import CalendarEvent
 from src.models.email_models import UrgencyBand
@@ -30,7 +31,6 @@ _BAND_TITLES: dict[UrgencyBand, str] = {
 def render_brief(brief: MorningBrief) -> str:
     lines: list[str] = []
 
-    # Header — natural date, no developer-speak
     day = brief.brief_date.strftime("%a %b %-d")
     generated = brief.generated_at.strftime("%H:%M %Z")
     lines.append(f"# Morning Brief — {day}")
@@ -38,21 +38,58 @@ def render_brief(brief: MorningBrief) -> str:
         f"{brief.account_email} · {brief.persona_display_name} · "
         f"last {brief.lookback_hours} h · {generated}"
     )
+    lines.extend(_render_account_sections(brief, heading_level=2))
+    return "\n".join(lines)
+
+
+def render_multi_brief(multi: MultiBrief) -> str:
+    """Render a multi-account brief.
+
+    Single section: delegates to render_brief (identical output).
+    Multiple sections: top-level H1 header, per-account H2 headers, H3 sub-sections.
+    """
+    if not multi.sections:
+        day = multi.brief_date.strftime("%a %b %-d")
+        generated = multi.generated_at.strftime("%H:%M %Z")
+        return f"# Morning Brief — {day}\n{generated}\n\nNo accounts synced.\n"
+
+    if len(multi.sections) == 1:
+        return render_brief(multi.sections[0])
+
+    lines: list[str] = []
+    day = multi.brief_date.strftime("%a %b %-d")
+    generated = multi.generated_at.strftime("%H:%M %Z")
+    lines.append(f"# Morning Brief — {day}")
+    lines.append(f"last {multi.lookback_hours} h · {generated}")
+    lines.append("")
+
+    for i, section in enumerate(multi.sections):
+        if i > 0:
+            lines.append("---")
+        lines.append("")
+        lines.append(f"## {section.account_email} · {section.persona_display_name}")
+        lines.extend(_render_account_sections(section, heading_level=3))
+
+    return "\n".join(lines)
+
+
+def _render_account_sections(brief: MorningBrief, *, heading_level: int) -> list[str]:
+    """Render the opener, agenda, mail bands, and footer for one account section."""
+    h = "#" * heading_level
+    lines: list[str] = []
     lines.extend(["", _opener(brief), ""])
 
-    # Agenda section — only rendered when there are events
     if brief.events:
-        lines.extend(["## Agenda", ""])
+        lines.extend([f"{h} Agenda", ""])
         lines.extend(_event_line(event) for event in brief.events)
         lines.append("")
 
-    # Mail sections with proposals inlined under each thread
     proposals_by_subject = _group_proposals_by_subject(brief.proposals)
     for band in URGENCY_ORDER:
         section = [t for t in brief.threads if t.urgency == band]
         if not section:
             continue
-        lines.extend([f"## {_BAND_TITLES[band]}", ""])
+        lines.extend([f"{h} {_BAND_TITLES[band]}", ""])
         for thread in section:
             lines.append(_thread_line(thread))
             for prop in proposals_by_subject.get(thread.subject, []):
@@ -67,7 +104,7 @@ def render_brief(brief: MorningBrief) -> str:
     if brief.llm_assist is not None and brief.llm_assist.enabled:
         lines.append(_llm_assist_line(brief.llm_assist))
     lines.append("")
-    return "\n".join(lines)
+    return lines
 
 
 def _opener(brief: MorningBrief) -> str:
